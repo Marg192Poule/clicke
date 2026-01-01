@@ -64,56 +64,103 @@ class ScreenshotEditorViewModel: ObservableObject {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
             
-            var allFiles: [(url: URL, size: Int, isVideo: Bool)] = []
-            let basePath = "/System/Library/Desktop Pictures"
-            let imageExtensions = ["jpg", "jpeg", "png", "heic"]
+            var allFiles: [(url: URL, size: Int, isVideo: Bool, category: String)] = []
+            
+            // All macOS wallpaper locations
+            let wallpaperPaths = [
+                "/System/Library/Desktop Pictures",
+                "/Library/Desktop Pictures",
+                NSHomeDirectory() + "/Library/Desktop Pictures",
+                // Sonoma+ dynamic wallpapers
+                "/System/Library/AssetsV2/com_apple_MobileAsset_DesktopPicture"
+            ]
+            
+            let imageExtensions = ["jpg", "jpeg", "png", "heic", "heif", "tiff", "webp"]
             let videoExtensions = ["mov", "mp4"]
             
             let fm = FileManager.default
-            let baseURL = URL(fileURLWithPath: basePath)
             
-            // Enumerate including hidden directories like .wallpapers
-            if let enumerator = fm.enumerator(
-                at: baseURL,
-                includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey],
-                options: [] // No options = include hidden files
-            ) {
-                for case let fileURL as URL in enumerator {
-                    let path = fileURL.path
-                    let ext = fileURL.pathExtension.lowercased()
-                    
-                    // Skip .thumbnails folder (low quality)
-                    if path.contains("/.thumbnails/") { continue }
-                    // Skip thumbnail files
-                    if path.contains("Thumbnail") { continue }
-                    // Skip Solid Colors folder
-                    if path.contains("/Solid Colors/") { continue }
-                    
-                    let isImage = imageExtensions.contains(ext)
-                    let isVideo = videoExtensions.contains(ext)
-                    
-                    guard isImage || isVideo else { continue }
-                    
-                    // Get file size to prioritize high-res images
-                    if let attrs = try? fm.attributesOfItem(atPath: path),
-                       let size = attrs[.size] as? Int {
-                        // Images > 100KB or any video (dynamic wallpapers)
-                        if (isImage && size > 100_000) || isVideo {
-                            allFiles.append((fileURL, size, isVideo))
+            for basePath in wallpaperPaths {
+                guard fm.fileExists(atPath: basePath) else { continue }
+                let baseURL = URL(fileURLWithPath: basePath)
+                
+                // Enumerate including hidden directories like .wallpapers
+                if let enumerator = fm.enumerator(
+                    at: baseURL,
+                    includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey, .isDirectoryKey],
+                    options: [] // No options = include hidden files
+                ) {
+                    for case let fileURL as URL in enumerator {
+                        let path = fileURL.path
+                        let ext = fileURL.pathExtension.lowercased()
+                        
+                        // Skip thumbnails and low-quality folders
+                        if path.contains("/.thumbnails/") { continue }
+                        if path.contains("Thumbnail") { continue }
+                        if path.contains("/Solid Colors/") { continue }
+                        if path.contains("@2x") && !path.contains("@3x") { continue } // Prefer highest res
+                        
+                        let isImage = imageExtensions.contains(ext)
+                        let isVideo = videoExtensions.contains(ext)
+                        
+                        guard isImage || isVideo else { continue }
+                        
+                        // Determine category from path
+                        var category = "Other"
+                        if path.contains("Ventura") || path.contains("ventura") { category = "Ventura" }
+                        else if path.contains("Sonoma") || path.contains("sonoma") { category = "Sonoma" }
+                        else if path.contains("Sequoia") || path.contains("sequoia") { category = "Sequoia" }
+                        else if path.contains("Monterey") || path.contains("monterey") { category = "Monterey" }
+                        else if path.contains("Big Sur") || path.contains("bigsur") { category = "Big Sur" }
+                        else if path.contains("Catalina") || path.contains("catalina") { category = "Catalina" }
+                        else if path.contains("Mojave") || path.contains("mojave") { category = "Mojave" }
+                        else if path.contains("Abstract") || path.contains("abstract") { category = "Abstract" }
+                        else if path.contains("Nature") || path.contains("nature") { category = "Nature" }
+                        else if path.contains("Landscape") || path.contains("landscape") { category = "Landscape" }
+                        
+                        // Get file size to prioritize high-res images
+                        if let attrs = try? fm.attributesOfItem(atPath: path),
+                           let size = attrs[.size] as? Int {
+                            // Images > 50KB or any video (dynamic wallpapers)
+                            if (isImage && size > 50_000) || isVideo {
+                                allFiles.append((fileURL, size, isVideo, category))
+                            }
                         }
                     }
                 }
             }
             
-            // Sort: videos first (landscape wallpapers), then by size
+            // Also try to get user's current wallpaper
+            if let screen = NSScreen.main,
+               let wallpaperURL = NSWorkspace.shared.desktopImageURL(for: screen) {
+                if !allFiles.contains(where: { $0.url == wallpaperURL }) {
+                    if let attrs = try? fm.attributesOfItem(atPath: wallpaperURL.path),
+                       let size = attrs[.size] as? Int {
+                        let ext = wallpaperURL.pathExtension.lowercased()
+                        let isVideo = videoExtensions.contains(ext)
+                        allFiles.insert((wallpaperURL, size, isVideo, "Current"), at: 0)
+                    }
+                }
+            }
+            
+            // Remove duplicates based on filename
+            var seen = Set<String>()
+            allFiles = allFiles.filter { item in
+                let name = item.url.lastPathComponent
+                if seen.contains(name) { return false }
+                seen.insert(name)
+                return true
+            }
+            
+            // Sort: videos first (dynamic wallpapers), then by size (highest quality first)
             allFiles.sort {
                 if $0.isVideo != $1.isVideo { return $0.isVideo }
                 return $0.size > $1.size
             }
             
-            // Load top 20 items (reduced for faster loading)
+            // Load top 50 items for more variety
             var loaded: [(URL, NSImage)] = []
-            for item in allFiles.prefix(20) {
+            for item in allFiles.prefix(50) {
                 var img: NSImage?
                 
                 if item.isVideo {

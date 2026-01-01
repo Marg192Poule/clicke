@@ -70,76 +70,109 @@ struct ScreenshotEditorView: View {
                 
                 Spacer()
                 
-                // Segmented control for tabs
-                Picker("", selection: $selectedSidebarTab) {
-                    Image(systemName: "square.on.square").tag(SidebarTab.mockup)
-                    Image(systemName: "macwindow").tag(SidebarTab.frame)
-                    Image(systemName: "textformat").tag(SidebarTab.text)
-                    Image(systemName: "eye.slash").tag(SidebarTab.redact)
-                    Image(systemName: "slider.horizontal.3").tag(SidebarTab.settings)
+                // Segmented control for tabs - more native style
+                HStack(spacing: 2) {
+                    ForEach([
+                        (SidebarTab.mockup, "square.on.square", "Style"),
+                        (SidebarTab.frame, "macwindow", "Frame"),
+                        (SidebarTab.text, "textformat", "Text"),
+                        (SidebarTab.redact, "eye.slash", "Redact"),
+                        (SidebarTab.settings, "slider.horizontal.3", "Settings")
+                    ], id: \.0) { tab, icon, name in
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.15)) {
+                                selectedSidebarTab = tab
+                            }
+                        } label: {
+                            Image(systemName: icon)
+                                .font(.system(size: 11, weight: selectedSidebarTab == tab ? .semibold : .regular))
+                                .foregroundColor(selectedSidebarTab == tab ? .primary : .secondary)
+                                .frame(width: 32, height: 24)
+                                .background {
+                                    if selectedSidebarTab == tab {
+                                        RoundedRectangle(cornerRadius: 5)
+                                            .fill(Color.gray.opacity(0.2))
+                                    }
+                                }
+                        }
+                        .buttonStyle(.plain)
+                        .help(name)
+                    }
                 }
-                .pickerStyle(.segmented)
-                .frame(width: 220)
+                .padding(3)
+                .background {
+                    RoundedRectangle(cornerRadius: 7)
+                        .fill(Color.gray.opacity(0.15))
+                }
             }
             .padding(.horizontal, 14)
             .padding(.top, 12)
-            .padding(.bottom, 8)
+            .padding(.bottom, 10)
             
             Divider()
+                .opacity(0.5)
             
-            // Native List
-            List {
-                // Screenshot info section
-                Section {
-                    HStack(spacing: 12) {
+            // Native List with proper styling
+            ScrollView {
+                VStack(spacing: 0) {
+                    // Screenshot info section - compact header
+                    HStack(spacing: 10) {
                         Image(nsImage: viewModel.originalImage)
                             .resizable()
                             .scaledToFit()
-                            .frame(width: 44, height: 44)
+                            .frame(width: 40, height: 40)
                             .cornerRadius(6)
+                            .shadow(color: .black.opacity(0.2), radius: 2, y: 1)
                         
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Screenshot")
-                                .font(.system(size: 13, weight: .medium))
-                            Text("\(Int(viewModel.originalImage.size.width))×\(Int(viewModel.originalImage.size.height))")
-                                .font(.system(size: 11))
+                                .font(.system(size: 12, weight: .medium))
+                            Text("\(Int(viewModel.originalImage.size.width)) × \(Int(viewModel.originalImage.size.height))")
+                                .font(.system(size: 10, design: .monospaced))
                                 .foregroundColor(.secondary)
                         }
+                        
+                        Spacer()
                     }
-                }
-                
-                switch selectedSidebarTab {
-                case .mockup:
-                    mockupListContent
-                case .frame:
-                    frameListContent
-                case .text:
-                    textListContent
-                case .redact:
-                    redactListContent
-                case .settings:
-                    settingsListContent
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    
+                    Divider()
+                        .padding(.horizontal, 14)
+                        .opacity(0.3)
+                    
+                    // Tab content
+                    VStack(spacing: 0) {
+                        switch selectedSidebarTab {
+                        case .mockup:
+                            mockupTabContent
+                        case .frame:
+                            frameTabContent
+                        case .text:
+                            textTabContent
+                        case .redact:
+                            redactTabContent
+                        case .settings:
+                            settingsTabContent
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.top, 12)
+                    .padding(.bottom, 20)
                 }
             }
-            .listStyle(.sidebar)
-            .scrollContentBackground(.hidden)
+            .scrollIndicators(.hidden)
         }
         .glassEffect(.regular, in: .rect(cornerRadius: 14))
+        .shadow(color: .black.opacity(0.3), radius: 20, x: 0, y: 10)
     }
     
-    private func windowControlButton(color: Color, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Circle()
-                .fill(color)
-                .frame(width: 12, height: 12)
-        }
-        .buttonStyle(.plain)
-    }
-    
-    // MARK: - Mockup List Content (Native macOS)
+    // MARK: - Tab Contents (Native styling without List)
     @ViewBuilder
-    private var mockupListContent: some View {
-        Section("Style") {
+    private var mockupTabContent: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // Style Section
+            sectionHeader("Style")
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 56))], spacing: 8) {
                 ForEach(MockupStyle.allCases) { style in
                     Button { viewModel.config.mockupStyle = style } label: {
@@ -162,114 +195,97 @@ struct ScreenshotEditorView: View {
                                 .lineLimit(1)
                         }
                     }
-                    .buttonStyle(.glass)
+                    .buttonStyle(.plain)
                 }
             }
             
             if viewModel.config.showMockup && viewModel.config.mockupStyle != .defaultStyle && viewModel.config.mockupStyle != .outline {
-                HStack {
-                    Text("Taille du contour")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                    Slider(value: $viewModel.config.mockupBorderSize, in: 0...10, step: 0.5)
-                        .frame(maxWidth: 120)
-                    Text(String(format: "%.1f", viewModel.config.mockupBorderSize))
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundColor(.secondary)
-                        .frame(width: 36)
-                }
-                .padding(.vertical, 4)
+                sliderRow(label: "Border", value: $viewModel.config.mockupBorderSize, range: 0...10, step: 0.5)
             }
-        }
-        
-        Section("Border") {
-            Picker("Style", selection: $viewModel.config.borderStyle) {
+            
+            Divider().opacity(0.3)
+            
+            // Border Section
+            sectionHeader("Border")
+            Picker("", selection: $viewModel.config.borderStyle) {
                 ForEach(BorderStyle.allCases) { style in
                     Text(style.displayName).tag(style)
                 }
             }
             .pickerStyle(.segmented)
+            .labelsHidden()
             .onChange(of: viewModel.config.borderStyle) { _, newValue in
                 viewModel.config.borderRadius = newValue.cornerRadius
             }
             
-            HStack {
-                Text("Radius")
-                Slider(value: $viewModel.config.borderRadius, in: 0...40)
-                    .frame(maxWidth: 120)
-                Text("\(Int(viewModel.config.borderRadius))")
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundColor(.secondary)
-                    .frame(width: 24)
-            }
-        }
-        
-        Section("Shadow") {
-            Picker("Style", selection: $viewModel.config.shadowStyle) {
+            sliderRow(label: "Radius", value: $viewModel.config.borderRadius, range: 0...40)
+            
+            Divider().opacity(0.3)
+            
+            // Shadow Section
+            sectionHeader("Shadow")
+            Picker("", selection: $viewModel.config.shadowStyle) {
                 ForEach(ShadowStyle.allCases) { style in
                     Text(style.displayName).tag(style)
                 }
             }
             .pickerStyle(.segmented)
+            .labelsHidden()
             
             if viewModel.config.shadowStyle != .none {
-                HStack {
-                    Text("Opacity")
-                    Slider(value: $viewModel.config.shadowOpacity, in: 0...100)
-                        .frame(maxWidth: 120)
-                    Text("\(Int(viewModel.config.shadowOpacity))")
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundColor(.secondary)
-                        .frame(width: 24)
-                }
+                sliderRow(label: "Opacity", value: $viewModel.config.shadowOpacity, range: 0...100)
             }
-        }
-        
-        Section("Transform") {
+            
+            Divider().opacity(0.3)
+            
+            // Transform Section
+            sectionHeader("Transform")
             HStack {
                 Text("Rotation")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
                 Spacer()
                 HStack(spacing: 6) {
                     Button { viewModel.config.rotation -= 90 } label: {
                         Image(systemName: "rotate.left")
-                            .font(.system(size: 12))
-                            .frame(width: 28, height: 28)
+                            .font(.system(size: 11))
+                            .frame(width: 26, height: 26)
+                            .background(Color.gray.opacity(0.15), in: RoundedRectangle(cornerRadius: 6))
                     }
-                    .buttonStyle(.glass)
+                    .buttonStyle(.plain)
                     
                     Text("\(Int(viewModel.config.rotation))°")
                         .font(.system(size: 10, design: .monospaced))
-                        .frame(width: 36)
+                        .foregroundColor(.secondary)
+                        .frame(width: 32)
                     
                     Button { viewModel.config.rotation += 90 } label: {
                         Image(systemName: "rotate.right")
-                            .font(.system(size: 12))
-                            .frame(width: 28, height: 28)
+                            .font(.system(size: 11))
+                            .frame(width: 26, height: 26)
+                            .background(Color.gray.opacity(0.15), in: RoundedRectangle(cornerRadius: 6))
                     }
-                    .buttonStyle(.glass)
+                    .buttonStyle(.plain)
                 }
             }
             
-            HStack {
-                Text("Position")
-                Spacer()
-                Button {
-                    viewModel.resetPosition()
-                } label: {
-                    Text("Reset")
-                        .font(.system(size: 11, weight: .medium))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                }
-                .buttonStyle(.glass)
+            Button {
+                viewModel.resetPosition()
+            } label: {
+                Text("Reset Position")
+                    .font(.system(size: 11, weight: .medium))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background(Color.gray.opacity(0.15), in: RoundedRectangle(cornerRadius: 8))
             }
+            .buttonStyle(.plain)
         }
     }
     
-    // MARK: - Frame List Content (Native macOS)
     @ViewBuilder
-    private var frameListContent: some View {
-        Section("Device Frames") {
+    private var frameTabContent: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            sectionHeader("Device Frame")
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
                 ForEach([DeviceFrame.macWindow, .browser], id: \.self) { frame in
                     let isSelected = viewModel.config.deviceFrame == frame && viewModel.config.showDeviceFrame
@@ -289,38 +305,30 @@ struct ScreenshotEditorView: View {
                         .padding(.vertical, 10)
                         .background {
                             RoundedRectangle(cornerRadius: 8)
-                                .fill(.ultraThinMaterial)
-                                .overlay {
-                                    if isSelected {
-                                        RoundedRectangle(cornerRadius: 8)
-                                            .fill(Color.accentColor.opacity(0.4))
-                                    }
-                                }
-                                .overlay {
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .stroke(isSelected ? Color.accentColor : Color.white.opacity(0.1), lineWidth: 1)
-                                }
+                                .fill(isSelected ? Color.accentColor.opacity(0.4) : Color.gray.opacity(0.15))
                         }
-                        .shadow(color: isSelected ? Color.accentColor.opacity(0.3) : .clear, radius: 4, x: 0, y: 2)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 1)
+                        }
                     }
-                    .buttonStyle(.glass)
+                    .buttonStyle(.plain)
                 }
             }
             
             Toggle("Show Frame", isOn: $viewModel.config.showDeviceFrame)
-                .toggleStyle(SwitchToggleStyle(tint: .accentColor))
-                .glassEffect(.regular, in: .rect(cornerRadius: 8))
-        }
-        
-        // Export Format info
-        if let preset = viewModel.config.selectedSocialPreset {
-            Section("Export Format") {
+                .toggleStyle(.switch)
+                .font(.system(size: 12))
+            
+            if let preset = viewModel.config.selectedSocialPreset {
+                Divider().opacity(0.3)
+                sectionHeader("Export Format")
                 HStack {
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: 2) {
                         Text("\(preset.platform) - \(preset.name)")
-                            .font(.system(size: 12, weight: .semibold))
-                        Text("\(preset.width) × \(preset.height) px")
-                            .font(.system(size: 11))
+                            .font(.system(size: 11, weight: .medium))
+                        Text("\(preset.width) × \(preset.height)")
+                            .font(.system(size: 10))
                             .foregroundColor(.secondary)
                     }
                     Spacer()
@@ -330,60 +338,508 @@ struct ScreenshotEditorView: View {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundColor(.secondary)
                     }
-                    .buttonStyle(.glass)
+                    .buttonStyle(.plain)
                 }
-                .padding(.vertical, 4)
+            }
+            
+            Divider().opacity(0.3)
+            
+            // Social Media Presets - collapsed sections
+            ForEach(Array(SocialMediaPreset.groupedByPlatform.keys.sorted()), id: \.self) { platform in
+                DisclosureGroup {
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
+                        ForEach(SocialMediaPreset.groupedByPlatform[platform] ?? []) { preset in
+                            let isSelected = viewModel.config.selectedSocialPreset?.id == preset.id
+                            Button {
+                                viewModel.config.selectedSocialPreset = isSelected ? nil : preset
+                            } label: {
+                                VStack(spacing: 3) {
+                                    RoundedRectangle(cornerRadius: 3)
+                                        .fill(isSelected ? Color.accentColor.opacity(0.3) : Color.secondary.opacity(0.2))
+                                        .aspectRatio(preset.aspectRatio, contentMode: .fit)
+                                        .frame(height: 28)
+                                    Text(preset.name)
+                                        .font(.system(size: 9))
+                                        .foregroundColor(isSelected ? .primary : .secondary)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 6)
+                                .background {
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(isSelected ? Color.accentColor.opacity(0.15) : .clear)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: socialIcon(platform))
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                        Text(platform)
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                }
+                .tint(.secondary)
             }
         }
-        
-        // Social Media Presets
-        ForEach(Array(SocialMediaPreset.groupedByPlatform.keys.sorted()), id: \.self) { platform in
-            Section(platform) {
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                    ForEach(SocialMediaPreset.groupedByPlatform[platform] ?? []) { preset in
-                        let isSelected = viewModel.config.selectedSocialPreset?.id == preset.id
+    }
+    
+    @ViewBuilder
+    private var textTabContent: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            sectionHeader("Add Text")
+            
+            TextField("Enter text...", text: $viewModel.newTextContent)
+                .textFieldStyle(.plain)
+                .padding(8)
+                .background(Color.gray.opacity(0.15), in: RoundedRectangle(cornerRadius: 8))
+            
+            sliderRow(label: "Size", value: $viewModel.newTextFontSize, range: 8...64, step: 1)
+            
+            HStack {
+                Text("Color")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                Spacer()
+                ColorPicker("", selection: $viewModel.newTextColor)
+                    .labelsHidden()
+            }
+            
+            Button {
+                viewModel.addTextOverlay()
+            } label: {
+                HStack {
+                    Image(systemName: "plus.circle.fill")
+                    Text("Add Text")
+                }
+                .font(.system(size: 12, weight: .medium))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(Color.accentColor.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
+            }
+            .buttonStyle(.plain)
+            .disabled(viewModel.newTextContent.isEmpty)
+            .opacity(viewModel.newTextContent.isEmpty ? 0.5 : 1)
+            
+            if !viewModel.config.textOverlays.isEmpty {
+                Divider().opacity(0.3)
+                sectionHeader("Text Layers")
+                
+                ForEach(viewModel.config.textOverlays) { overlay in
+                    HStack {
+                        Circle()
+                            .fill(overlay.color)
+                            .frame(width: 10, height: 10)
+                        Text(overlay.text)
+                            .font(.system(size: 11))
+                            .lineLimit(1)
+                        
+                        Spacer()
+                        
                         Button {
-                            if isSelected {
-                                viewModel.config.selectedSocialPreset = nil
-                            } else {
-                                viewModel.config.selectedSocialPreset = preset
-                            }
+                            viewModel.toggleTextBlur(overlay.id)
                         } label: {
-                            VStack(spacing: 4) {
-                                // Aspect ratio preview
-                                RoundedRectangle(cornerRadius: 4)
-                                    .fill(isSelected ? Color.accentColor.opacity(0.3) : Color.gray.opacity(0.2))
-                                    .aspectRatio(preset.aspectRatio, contentMode: .fit)
-                                    .frame(height: 40)
-                                    .overlay {
-                                        Image(systemName: socialIcon(platform))
-                                            .font(.system(size: 14))
-                                            .foregroundColor(isSelected ? .accentColor : .secondary)
-                                    }
-                                
-                                Text(preset.name)
-                                    .font(.system(size: 10, weight: .medium))
-                                Text(preset.ratio)
-                                    .font(.system(size: 9))
-                                    .foregroundColor(.secondary)
-                            }
-                            .foregroundColor(isSelected ? .white : .secondary)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                            .background {
-                                RoundedRectangle(cornerRadius: 8)
-                                    .fill(.ultraThinMaterial)
-                                    .overlay {
-                                        RoundedRectangle(cornerRadius: 8)
-                                            .stroke(isSelected ? Color.accentColor : Color.white.opacity(0.1), lineWidth: 1)
-                                    }
-                            }
+                            Image(systemName: overlay.isBlurred ? "eye.slash.fill" : "eye.fill")
+                                .font(.system(size: 10))
+                                .foregroundColor(overlay.isBlurred ? .orange : .secondary)
                         }
-                        .buttonStyle(.glass)
+                        .buttonStyle(.plain)
+                        
+                        Button {
+                            viewModel.removeTextOverlay(overlay.id)
+                        } label: {
+                            Image(systemName: "trash")
+                                .font(.system(size: 10))
+                                .foregroundColor(.red.opacity(0.8))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private var redactTabContent: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            sectionHeader("Redact Mode")
+            
+            Toggle("Enable Redact Mode", isOn: $viewModel.config.redactEnabled)
+                .toggleStyle(.switch)
+                .font(.system(size: 12))
+            
+            if viewModel.config.redactEnabled {
+                HStack(spacing: 6) {
+                    Image(systemName: "hand.draw")
+                        .foregroundColor(.orange)
+                    Text("Draw on image to blur areas")
+                        .font(.system(size: 10))
+                        .foregroundColor(.orange)
+                }
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+            }
+            
+            Divider().opacity(0.3)
+            sectionHeader("Redact Style")
+            
+            ForEach(RedactStyle.allCases) { style in
+                let isSelected = viewModel.config.redactStyle == style
+                Button {
+                    viewModel.config.redactStyle = style
+                } label: {
+                    HStack {
+                        Image(systemName: redactStyleIcon(style))
+                            .foregroundColor(redactStyleColor(style))
+                            .frame(width: 20)
+                        Text(style.displayName)
+                            .font(.system(size: 11))
+                        Spacer()
+                        if isSelected {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundColor(.accentColor)
+                        }
+                    }
+                    .padding(.vertical, 8)
+                    .padding(.horizontal, 10)
+                    .background {
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(isSelected ? redactStyleColor(style).opacity(0.15) : Color.gray.opacity(0.1))
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+            
+            if !viewModel.config.redactRegions.isEmpty {
+                Divider().opacity(0.3)
+                sectionHeader("Redacted Areas (\(viewModel.config.redactRegions.count))")
+                
+                ForEach(viewModel.config.redactRegions) { region in
+                    HStack {
+                        Image(systemName: redactStyleIcon(region.style))
+                            .font(.system(size: 10))
+                            .foregroundColor(redactStyleColor(region.style))
+                        Text("Region \((viewModel.config.redactRegions.firstIndex(where: { $0.id == region.id }) ?? 0) + 1)")
+                            .font(.system(size: 11))
+                        Spacer()
+                        Button {
+                            viewModel.config.redactRegions.removeAll { $0.id == region.id }
+                        } label: {
+                            Image(systemName: "trash")
+                                .font(.system(size: 10))
+                                .foregroundColor(.red.opacity(0.8))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.vertical, 4)
+                }
+                
+                Button {
+                    viewModel.config.redactRegions.removeAll()
+                } label: {
+                    HStack {
+                        Image(systemName: "trash")
+                        Text("Clear All")
+                    }
+                    .font(.system(size: 11))
+                    .foregroundColor(.red)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background(Color.red.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private var settingsTabContent: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // View Zoom
+            sectionHeader("View Zoom")
+            sliderRow(label: "Zoom", value: $viewModel.config.zoom, range: 10...300, step: 5, suffix: "%")
+            
+            HStack(spacing: 8) {
+                Button("Center") { viewModel.resetPosition() }
+                    .font(.system(size: 11))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+                    .background(Color.gray.opacity(0.15), in: RoundedRectangle(cornerRadius: 6))
+                    .buttonStyle(.plain)
+                
+                Button("Fit") { viewModel.fitAndCenter() }
+                    .font(.system(size: 11))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+                    .background(Color.gray.opacity(0.15), in: RoundedRectangle(cornerRadius: 6))
+                    .buttonStyle(.plain)
+            }
+            
+            Divider().opacity(0.3)
+            
+            // Image Scale
+            sectionHeader("Image Scale")
+            sliderRow(label: "Scale", value: $viewModel.config.imageScale, range: 10...200, step: 5, suffix: "%")
+            
+            Divider().opacity(0.3)
+            
+            // Padding
+            sectionHeader("Padding")
+            sliderRow(label: "Size", value: $viewModel.config.padding, range: 0...200, step: 8)
+            
+            Divider().opacity(0.3)
+            
+            // Background
+            sectionHeader("Background")
+            Picker("", selection: $selectedBackgroundTab) {
+                ForEach(BackgroundType.allCases) { type in
+                    Text(type.displayName).tag(type)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .onChange(of: selectedBackgroundTab) { _, newValue in
+                viewModel.config.backgroundType = newValue
+            }
+            
+            backgroundTabContent
+            
+            Divider().opacity(0.3)
+            
+            // Effects
+            sectionHeader("Effects")
+            
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Noise")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                HStack(spacing: 4) {
+                    ForEach([(0.0, "Off"), (30.0, "Low"), (70.0, "High")], id: \.0) { value, label in
+                        Button {
+                            viewModel.config.backgroundNoise = value
+                        } label: {
+                            Text(label)
+                                .font(.system(size: 10, weight: viewModel.config.backgroundNoise == value ? .semibold : .regular))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 6)
+                                .background {
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(viewModel.config.backgroundNoise == value ? Color.accentColor.opacity(0.3) : Color.gray.opacity(0.15))
+                                }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Blur")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                HStack(spacing: 4) {
+                    ForEach([(0.0, "Off"), (30.0, "Low"), (70.0, "High")], id: \.0) { value, label in
+                        Button {
+                            viewModel.config.backgroundBlur = value
+                        } label: {
+                            Text(label)
+                                .font(.system(size: 10, weight: viewModel.config.backgroundBlur == value ? .semibold : .regular))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 6)
+                                .background {
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(viewModel.config.backgroundBlur == value ? Color.accentColor.opacity(0.3) : Color.gray.opacity(0.15))
+                                }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            
+            Divider().opacity(0.3)
+            
+            // Shadow Scene
+            sectionHeader("Shadow Scene")
+            Picker("", selection: $viewModel.config.shadowSceneMode) {
+                ForEach(ShadowSceneMode.allCases) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            
+            sliderRow(label: "Opacity", value: $viewModel.config.shadowSceneOpacity, range: 0...100)
+            
+            Divider().opacity(0.3)
+            
+            // Action Buttons
+            VStack(spacing: 10) {
+                Button {
+                    if let img = viewModel.copyAction() {
+                        onCopy(img)
+                    }
+                } label: {
+                    HStack {
+                        Image(systemName: "doc.on.clipboard.fill")
+                        Text("Copy to Clipboard")
+                    }
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background {
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color.accentColor)
+                    }
+                    .shadow(color: Color.accentColor.opacity(0.4), radius: 8, x: 0, y: 4)
+                }
+                .buttonStyle(.plain)
+                
+                Button {
+                    viewModel.saveAction()
+                } label: {
+                    HStack {
+                        Image(systemName: "square.and.arrow.down")
+                        Text("Save to File")
+                    }
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.primary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color.gray.opacity(0.15), in: RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+    
+    // Background content for tab
+    @ViewBuilder
+    private var backgroundTabContent: some View {
+        switch selectedBackgroundTab {
+        case .transparent:
+            HStack(spacing: 8) {
+                Image(systemName: "checkerboard.rectangle")
+                    .foregroundColor(.secondary)
+                Text("Transparent background")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+            }
+            .padding(.vertical, 8)
+            
+        case .color:
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 28))], spacing: 6) {
+                ForEach(MagicPreset.presets) { preset in
+                    Button {
+                        viewModel.config.selectedMagicPreset = preset
+                        viewModel.config.selectedGradient = nil
+                        viewModel.config.selectedSolidColor = nil
+                        viewModel.config.backgroundImageURL = nil
+                    } label: {
+                        Circle()
+                            .fill(LinearGradient(colors: preset.colors, startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .frame(width: 26, height: 26)
+                            .overlay(
+                                Circle()
+                                    .stroke(viewModel.config.selectedMagicPreset?.id == preset.id ? Color.accentColor : Color.clear, lineWidth: 2)
+                            )
+                            .shadow(color: viewModel.config.selectedMagicPreset?.id == preset.id ? Color.accentColor.opacity(0.4) : .clear, radius: 4)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            
+        case .image:
+            if viewModel.wallpaperImages.isEmpty {
+                VStack(spacing: 8) {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                    Text("Loading wallpapers...")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, minHeight: 60)
+            } else {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("\(viewModel.wallpaperImages.count) wallpapers")
+                        .font(.system(size: 9))
+                        .foregroundColor(Color.gray.opacity(0.6))
+                    
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 56))], spacing: 6) {
+                        ForEach(viewModel.wallpaperImages, id: \.url) { item in
+                            Button {
+                                viewModel.selectedWallpaperURL = item.url
+                                viewModel.config.backgroundImageURL = item.url
+                                viewModel.config.selectedMagicPreset = nil
+                                viewModel.config.selectedGradient = nil
+                                viewModel.config.selectedSolidColor = nil
+                            } label: {
+                                Image(nsImage: item.image)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 56, height: 38)
+                                    .clipShape(RoundedRectangle(cornerRadius: 5))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 5)
+                                            .stroke(viewModel.selectedWallpaperURL == item.url ? Color.accentColor : Color.white.opacity(0.1), lineWidth: viewModel.selectedWallpaperURL == item.url ? 2 : 0.5)
+                                    )
+                                    .shadow(color: viewModel.selectedWallpaperURL == item.url ? Color.accentColor.opacity(0.4) : .clear, radius: 3)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
             }
         }
+    }
+    
+    // MARK: - Helper Views
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title.uppercased())
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundColor(.secondary)
+            .tracking(0.5)
+    }
+    
+    private func sliderRow(label: String, value: Binding<Double>, range: ClosedRange<Double>, step: Double = 1, suffix: String = "") -> some View {
+        HStack(spacing: 8) {
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+                .frame(width: 50, alignment: .leading)
+            Slider(value: value, in: range, step: step)
+            Text("\(Int(value.wrappedValue))\(suffix)")
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundColor(Color.gray.opacity(0.6))
+                .frame(width: 36, alignment: .trailing)
+        }
+    }
+    
+    private func sliderRow(label: String, value: Binding<CGFloat>, range: ClosedRange<CGFloat>, step: CGFloat = 1, suffix: String = "") -> some View {
+        HStack(spacing: 8) {
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+                .frame(width: 50, alignment: .leading)
+            Slider(value: value, in: range, step: step)
+            Text("\(Int(value.wrappedValue))\(suffix)")
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundColor(Color.gray.opacity(0.6))
+                .frame(width: 36, alignment: .trailing)
+        }
+    }
+    
+    private func windowControlButton(color: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Circle()
+                .fill(color)
+                .frame(width: 12, height: 12)
+        }
+        .buttonStyle(.plain)
     }
     
     private func socialIcon(_ platform: String) -> String {
@@ -435,160 +891,6 @@ struct ScreenshotEditorView: View {
         }
     }
     
-    // MARK: - Text List Content
-    @ViewBuilder
-    private var textListContent: some View {
-        Section("Add Text") {
-            TextField("Enter text...", text: $viewModel.newTextContent)
-                .textFieldStyle(.roundedBorder)
-            
-            HStack {
-                Text("Size")
-                Slider(value: $viewModel.newTextFontSize, in: 8...64, step: 1)
-                    .frame(maxWidth: 120)
-                Text("\(Int(viewModel.newTextFontSize))")
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundColor(.secondary)
-                    .frame(width: 24)
-            }
-            
-            ColorPicker("Color", selection: $viewModel.newTextColor)
-            
-            Button {
-                viewModel.addTextOverlay()
-            } label: {
-                HStack {
-                    Image(systemName: "plus.circle.fill")
-                    Text("Add Text")
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
-                .background {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(.ultraThinMaterial)
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(Color.white.opacity(0.2), lineWidth: 1)
-                        }
-                }
-            }
-            .buttonStyle(.glass)
-            .disabled(viewModel.newTextContent.isEmpty)
-        }
-        
-        if !viewModel.config.textOverlays.isEmpty {
-            Section("Text Layers") {
-                ForEach(viewModel.config.textOverlays) { overlay in
-                    HStack {
-                        Text(overlay.text)
-                            .lineLimit(1)
-                            .foregroundColor(overlay.color)
-                        
-                        Spacer()
-                        
-                        Button {
-                            viewModel.toggleTextBlur(overlay.id)
-                        } label: {
-                            Image(systemName: overlay.isBlurred ? "eye.slash.fill" : "eye.fill")
-                                .foregroundColor(overlay.isBlurred ? .orange : .secondary)
-                        }
-                        .buttonStyle(.glass)
-                        
-                        Button {
-                            viewModel.removeTextOverlay(overlay.id)
-                        } label: {
-                            Image(systemName: "trash")
-                                .foregroundColor(.red)
-                        }
-                        .buttonStyle(.glass)
-                    }
-                    .padding(.vertical, 4)
-                }
-            }
-        }
-    }
-    
-    // MARK: - Redact List Content
-    @ViewBuilder
-    private var redactListContent: some View {
-        Section("Redact Mode") {
-            Toggle("Enable Redact Mode", isOn: $viewModel.config.redactEnabled)
-                .toggleStyle(SwitchToggleStyle(tint: .orange))
-                .glassEffect(.regular, in: .rect(cornerRadius: 8))
-            
-            if viewModel.config.redactEnabled {
-                Text("Click and drag on the image to blur sensitive areas")
-                    .font(.caption)
-                    .foregroundColor(.orange)
-                    .padding(.vertical, 4)
-            }
-        }
-        
-        Section("Redact Style") {
-            ForEach(RedactStyle.allCases) { style in
-                let isSelected = viewModel.config.redactStyle == style
-                Button {
-                    viewModel.config.redactStyle = style
-                } label: {
-                    HStack {
-                        Image(systemName: redactStyleIcon(style))
-                            .foregroundColor(redactStyleColor(style))
-                        Text(style.displayName)
-                        Spacer()
-                        if isSelected {
-                            Image(systemName: "checkmark")
-                                .foregroundColor(.accentColor)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 10)
-                    .padding(.horizontal, 12)
-                    .background {
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(.ultraThinMaterial)
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(isSelected ? redactStyleColor(style) : Color.white.opacity(0.1), lineWidth: 1)
-                            }
-                    }
-                }
-                .buttonStyle(.glass)
-            }
-        }
-        
-        if !viewModel.config.redactRegions.isEmpty {
-            Section("Redacted Areas (\(viewModel.config.redactRegions.count))") {
-                ForEach(viewModel.config.redactRegions) { region in
-                    HStack {
-                        Image(systemName: redactStyleIcon(region.style))
-                            .foregroundColor(redactStyleColor(region.style))
-                        Text("Region \(viewModel.config.redactRegions.firstIndex(where: { $0.id == region.id })! + 1)")
-                        Spacer()
-                        Button {
-                            viewModel.config.redactRegions.removeAll { $0.id == region.id }
-                        } label: {
-                            Image(systemName: "trash")
-                                .foregroundColor(.red)
-                        }
-                        .buttonStyle(.glass)
-                    }
-                }
-                
-                Button {
-                    viewModel.config.redactRegions.removeAll()
-                } label: {
-                    HStack {
-                        Image(systemName: "trash")
-                        Text("Clear All")
-                    }
-                    .foregroundColor(.red)
-                }
-                .buttonStyle(.glass)
-            }
-        }
-    }
-    
-    
     private func redactStyleIcon(_ style: RedactStyle) -> String {
         switch style {
         case .blur: return "aqi.medium"
@@ -613,19 +915,15 @@ struct ScreenshotEditorView: View {
             switch region.style {
             case .blur:
                 ZStack {
-                    // Solid background to actually hide content
                     Rectangle()
                         .fill(Color.gray.opacity(0.85))
-                    // Blur effect on top
                     Rectangle()
                         .fill(.regularMaterial)
                 }
             case .pixelate:
                 ZStack {
-                    // Solid background
                     Rectangle()
                         .fill(Color.gray.opacity(0.9))
-                    // Pixelate pattern on top
                     PixelateOverlayView()
                 }
             case .blackBar:
@@ -649,25 +947,24 @@ struct ScreenshotEditorView: View {
                 }
                 .ignoresSafeArea()
                 
-                // Centered screenshot - using position for true center in available space
+                // Centered screenshot
                 ScreenshotPreviewCanvas(image: viewModel.originalImage, config: viewModel.config, isDragging: $isDraggingScreenshot) { newOffset in
                     viewModel.config.screenshotOffset = newOffset
                 }
-                    // ID based on properties that affect canvas size/structure, not visual background
-                    .id("canvas-\(viewModel.config.showDeviceFrame)-\(viewModel.config.deviceFrame.rawValue)-\(viewModel.config.showMockup)-\(viewModel.config.mockupStyle.rawValue)-\(viewModel.config.padding)-\(viewModel.config.imageScale)-\(viewModel.config.selectedSocialPreset?.id.uuidString ?? "none")")
-                    .scaleEffect(viewModel.config.zoom / 100)
-                    .rotationEffect(.degrees(viewModel.config.rotation))
-                    .position(
-                        x: (320 + 24) + (geo.size.width - 320 - 24) / 2 + viewModel.offset.width + viewModel.lastOffset.width,
-                        y: geo.size.height / 2 + viewModel.offset.height + viewModel.lastOffset.height
-                    )
+                .id("canvas-\(viewModel.config.showDeviceFrame)-\(viewModel.config.deviceFrame.rawValue)-\(viewModel.config.showMockup)-\(viewModel.config.mockupStyle.rawValue)-\(viewModel.config.selectedSocialPreset?.id.uuidString ?? "none")")
+                .scaleEffect(viewModel.config.zoom / 100)
+                .rotationEffect(.degrees(viewModel.config.rotation))
+                .position(
+                    x: (320 + 24) + (geo.size.width - 320 - 24) / 2 + viewModel.offset.width + viewModel.lastOffset.width,
+                    y: geo.size.height / 2 + viewModel.offset.height + viewModel.lastOffset.height
+                )
                 
-                // Existing redact regions (displayed in screen space)
+                // Existing redact regions
                 ForEach(viewModel.config.redactRegions) { region in
                     redactRegionOverlay(region)
                 }
                 
-                // Redact drawing overlay (current drawing)
+                // Redact drawing overlay
                 if viewModel.config.redactEnabled, let start = viewModel.currentRedactStart, let end = viewModel.currentRedactEnd {
                     Rectangle()
                         .fill(redactStyleColor(viewModel.config.redactStyle).opacity(0.3))
@@ -706,7 +1003,6 @@ struct ScreenshotEditorView: View {
                 let oldLastOffset = viewModel.lastOffset
                 viewModel.canvasSize = new
                 viewModel.calculateFitZoom()
-                // Restore offset after zoom recalculation
                 viewModel.offset = oldOffset
                 viewModel.lastOffset = oldLastOffset
             }
@@ -735,7 +1031,6 @@ struct ScreenshotEditorView: View {
             }
             .onEnded { value in
                 if let start = viewModel.currentRedactStart, let end = viewModel.currentRedactEnd {
-                    // Store screen coordinates for overlay display
                     let screenRect = CGRect(
                         x: min(start.x, end.x),
                         y: min(start.y, end.y),
@@ -744,7 +1039,6 @@ struct ScreenshotEditorView: View {
                     )
                     
                     if screenRect.width > 10 && screenRect.height > 10 {
-                        // Convert screen coordinates to image-relative coordinates
                         let imageRect = viewModel.screenToImageCoordinates(screenRect)
                         let region = RedactRegion(rect: imageRect, style: viewModel.config.redactStyle)
                         viewModel.addRedactRegion(region)
@@ -762,380 +1056,6 @@ struct ScreenshotEditorView: View {
                 viewModel.config.zoom = min(max(newZoom, 10), 300)
             }
     }
-    
-    // MARK: - Settings List Content
-    @ViewBuilder
-    private var settingsListContent: some View {
-                Section("View Zoom") {
-                    VStack(spacing: 4) {
-                        HStack {
-                            Slider(value: $viewModel.config.zoom, in: 10...300, step: 5)
-                            .frame(maxWidth: 120)
-                            Text("\(Int(viewModel.config.zoom))%")
-                                .font(.system(size: 10, design: .monospaced))
-                                .foregroundColor(.secondary)
-                                .frame(width: 36)
-                        }
-                    }
-                    
-                    HStack(spacing: 8) {
-                        Button("Center") { viewModel.resetPosition() }
-                        .buttonStyle(.glass)
-                        Button("Fit") { viewModel.fitAndCenter() }
-                        .buttonStyle(.glass)
-                    }
-                }
-                
-                Section("Image Scale") {
-                    VStack(spacing: 4) {
-                        HStack {
-                        Slider(value: Binding(
-                            get: { viewModel.config.imageScale },
-                            set: { newValue in
-                                viewModel.config.imageScale = newValue
-                            }
-                        ), in: 10...200, step: 5)
-                            .frame(maxWidth: 120)
-                            Text("\(Int(viewModel.config.imageScale))%")
-                                .font(.system(size: 10, design: .monospaced))
-                                .foregroundColor(.secondary)
-                                .frame(width: 36)
-                        }
-                    }
-                    
-                    HStack(spacing: 8) {
-                        Button("100%") { viewModel.config.imageScale = 100 }
-                        .buttonStyle(.glass)
-                        Button("Fit") { viewModel.config.imageScale = 80 }
-                        .buttonStyle(.glass)
-                }
-            }
-            
-            Section("Screenshot Position") {
-                Button("Reset Position") {
-                    viewModel.resetScreenshotOffset()
-                }
-                .buttonStyle(.glass)
-            }
-                
-                Section("Padding") {
-                    HStack {
-                        Slider(value: $viewModel.config.padding, in: 0...200, step: 8)
-                    .frame(maxWidth: 120)
-                        Text("\(Int(viewModel.config.padding))")
-                            .font(.system(size: 10, design: .monospaced))
-                            .foregroundColor(.secondary)
-                            .frame(width: 28)
-                    }
-                }
-                
-                Section("Background") {
-                    Picker("Type", selection: $selectedBackgroundTab) {
-                        ForEach(BackgroundType.allCases) { type in
-                            Text(type.displayName).tag(type)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .onChange(of: selectedBackgroundTab) { _, newValue in
-                        viewModel.config.backgroundType = newValue
-                    }
-                    
-                    backgroundListContent
-                }
-                
-                Section("Background Effects") {
-                    VStack(alignment: .leading, spacing: 12) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Noise")
-                                .font(.system(size: 11))
-                                .foregroundColor(.secondary)
-                        HStack(spacing: 6) {
-                            Button {
-                                withAnimation(.none) {
-                                    viewModel.config.backgroundNoise = 0
-                                }
-                            } label: {
-                                Text("Off")
-                                    .font(.system(size: 10, weight: viewModel.config.backgroundNoise == 0 ? .semibold : .regular))
-                                    .foregroundColor(viewModel.config.backgroundNoise == 0 ? .white : .secondary)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 6)
-                                    .background {
-                                        RoundedRectangle(cornerRadius: 6)
-                                            .fill(viewModel.config.backgroundNoise == 0 ? Color.accentColor.opacity(0.3) : Color.clear)
-                                    }
-                                    .overlay {
-                                        RoundedRectangle(cornerRadius: 6)
-                                            .stroke(viewModel.config.backgroundNoise == 0 ? Color.accentColor : Color.white.opacity(0.1), lineWidth: 1)
-                                    }
-                            }
-                            .buttonStyle(.glass)
-                            
-                            Button {
-                                withAnimation(.none) {
-                                    viewModel.config.backgroundNoise = 30
-                                }
-                            } label: {
-                                Text("Low")
-                                    .font(.system(size: 10, weight: viewModel.config.backgroundNoise == 30 ? .semibold : .regular))
-                                    .foregroundColor(viewModel.config.backgroundNoise == 30 ? .white : .secondary)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 6)
-                                    .background {
-                                        RoundedRectangle(cornerRadius: 6)
-                                            .fill(viewModel.config.backgroundNoise == 30 ? Color.accentColor.opacity(0.3) : Color.clear)
-                                    }
-                                    .overlay {
-                                        RoundedRectangle(cornerRadius: 6)
-                                            .stroke(viewModel.config.backgroundNoise == 30 ? Color.accentColor : Color.white.opacity(0.1), lineWidth: 1)
-                                    }
-                            }
-                            .buttonStyle(.glass)
-                            
-                            Button {
-                                withAnimation(.none) {
-                                    viewModel.config.backgroundNoise = 70
-                                }
-                            } label: {
-                                Text("High")
-                                    .font(.system(size: 10, weight: viewModel.config.backgroundNoise == 70 ? .semibold : .regular))
-                                    .foregroundColor(viewModel.config.backgroundNoise == 70 ? .white : .secondary)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 6)
-                                    .background {
-                                        RoundedRectangle(cornerRadius: 6)
-                                            .fill(viewModel.config.backgroundNoise == 70 ? Color.accentColor.opacity(0.3) : Color.clear)
-                                    }
-                                    .overlay {
-                                        RoundedRectangle(cornerRadius: 6)
-                                            .stroke(viewModel.config.backgroundNoise == 70 ? Color.accentColor : Color.white.opacity(0.1), lineWidth: 1)
-                                    }
-                            }
-                            .buttonStyle(.glass)
-                        }
-                        }
-                        
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Blur")
-                                .font(.system(size: 11))
-                                .foregroundColor(.secondary)
-                        HStack(spacing: 6) {
-                            Button {
-                                withAnimation(.none) {
-                                    viewModel.config.backgroundBlur = 0
-                                }
-                            } label: {
-                                Text("Off")
-                                    .font(.system(size: 10, weight: viewModel.config.backgroundBlur == 0 ? .semibold : .regular))
-                                    .foregroundColor(viewModel.config.backgroundBlur == 0 ? .white : .secondary)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 6)
-                                    .background {
-                                        RoundedRectangle(cornerRadius: 6)
-                                            .fill(viewModel.config.backgroundBlur == 0 ? Color.accentColor.opacity(0.3) : Color.clear)
-                                    }
-                                    .overlay {
-                                        RoundedRectangle(cornerRadius: 6)
-                                            .stroke(viewModel.config.backgroundBlur == 0 ? Color.accentColor : Color.white.opacity(0.1), lineWidth: 1)
-                                    }
-                            }
-                            .buttonStyle(.glass)
-                            
-                            Button {
-                                withAnimation(.none) {
-                                    viewModel.config.backgroundBlur = 30
-                                }
-                            } label: {
-                                Text("Low")
-                                    .font(.system(size: 10, weight: viewModel.config.backgroundBlur == 30 ? .semibold : .regular))
-                                    .foregroundColor(viewModel.config.backgroundBlur == 30 ? .white : .secondary)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 6)
-                                    .background {
-                                        RoundedRectangle(cornerRadius: 6)
-                                            .fill(viewModel.config.backgroundBlur == 30 ? Color.accentColor.opacity(0.3) : Color.clear)
-                                    }
-                                    .overlay {
-                                        RoundedRectangle(cornerRadius: 6)
-                                            .stroke(viewModel.config.backgroundBlur == 30 ? Color.accentColor : Color.white.opacity(0.1), lineWidth: 1)
-                                    }
-                            }
-                            .buttonStyle(.glass)
-                            
-                            Button {
-                                withAnimation(.none) {
-                                    viewModel.config.backgroundBlur = 70
-                                }
-                            } label: {
-                                Text("High")
-                                    .font(.system(size: 10, weight: viewModel.config.backgroundBlur == 70 ? .semibold : .regular))
-                                    .foregroundColor(viewModel.config.backgroundBlur == 70 ? .white : .secondary)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 6)
-                                    .background {
-                                        RoundedRectangle(cornerRadius: 6)
-                                            .fill(viewModel.config.backgroundBlur == 70 ? Color.accentColor.opacity(0.3) : Color.clear)
-                                    }
-                                    .overlay {
-                                        RoundedRectangle(cornerRadius: 6)
-                                            .stroke(viewModel.config.backgroundBlur == 70 ? Color.accentColor : Color.white.opacity(0.1), lineWidth: 1)
-                                    }
-                            }
-                            .buttonStyle(.glass)
-                        }
-                    }
-                    }
-                }
-                
-                Section("Shadow Scene") {
-                    Picker("Mode", selection: $viewModel.config.shadowSceneMode) {
-                        ForEach(ShadowSceneMode.allCases) { mode in
-                            Text(mode.displayName).tag(mode)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Opacity")
-                            .font(.system(size: 11))
-                            .foregroundColor(.secondary)
-                        HStack {
-                        Slider(value: $viewModel.config.shadowSceneOpacity, in: 0...100, step: 1)
-                            .frame(maxWidth: 120)
-                            Text("\(Int(viewModel.config.shadowSceneOpacity))")
-                                .font(.system(size: 10, design: .monospaced))
-                                .foregroundColor(.secondary)
-                                .frame(width: 28)
-                        }
-                    }
-                }
-            
-            Section {
-            VStack(spacing: 10) {
-                Button(action: {
-                    if let img = viewModel.copyAction() {
-                        onCopy(img)
-                    }
-                }) {
-                    HStack {
-                        Image(systemName: "doc.on.clipboard.fill")
-                        Text("Copy to Clipboard")
-                    }
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background {
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(.ultraThinMaterial)
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 10)
-                                    .fill(Color.accentColor.opacity(0.5))
-                            }
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 10)
-                                    .stroke(Color.white.opacity(0.2), lineWidth: 1)
-                            }
-                        }
-                        .shadow(color: Color.accentColor.opacity(0.3), radius: 8, x: 0, y: 4)
-                    }
-                    .buttonStyle(.glass)
-                    
-                    Button(action: {
-                        viewModel.saveAction()
-                    }) {
-                        HStack {
-                            Image(systemName: "square.and.arrow.down")
-                            Text("Save to File")
-                        }
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(.white.opacity(0.8))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                    }
-                    .buttonStyle(.glass)
-            }
-                .padding(.vertical, 8)
-        }
-    }
-    
-    // Background content for List
-    @ViewBuilder
-    private var backgroundListContent: some View {
-        switch selectedBackgroundTab {
-        case .transparent:
-            Text("Transparent background")
-                .font(.system(size: 11))
-                .foregroundColor(.secondary)
-            
-        case .color:
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 28))], spacing: 6) {
-                ForEach(MagicPreset.presets) { preset in
-                    Button {
-                        viewModel.config.selectedMagicPreset = preset
-                        viewModel.config.selectedGradient = nil
-                        viewModel.config.selectedSolidColor = nil
-                        viewModel.config.backgroundImageURL = nil
-                    } label: {
-                        Circle()
-                            .fill(LinearGradient(colors: preset.colors, startPoint: .topLeading, endPoint: .bottomTrailing))
-                            .frame(width: 26, height: 26)
-                            .overlay(
-                                Circle()
-                                    .stroke(viewModel.config.selectedMagicPreset?.id == preset.id ? Color.accentColor : Color.clear, lineWidth: 2)
-                            )
-                    }
-                    .buttonStyle(.glass)
-                }
-            }
-            
-        case .image:
-            if viewModel.wallpaperImages.isEmpty {
-                ProgressView()
-                    .frame(maxWidth: .infinity, minHeight: 50)
-            } else {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 50))], spacing: 6) {
-                    ForEach(viewModel.wallpaperImages.prefix(12), id: \.url) { item in
-                        Button {
-                            viewModel.selectedWallpaperURL = item.url
-                            viewModel.config.backgroundImageURL = item.url
-                            viewModel.config.selectedMagicPreset = nil
-                            viewModel.config.selectedGradient = nil
-                            viewModel.config.selectedSolidColor = nil
-                        } label: {
-                            Image(nsImage: item.image)
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: 50, height: 35)
-                                .clipShape(RoundedRectangle(cornerRadius: 4))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 4)
-                                        .stroke(viewModel.selectedWallpaperURL == item.url ? Color.accentColor : Color.clear, lineWidth: 2)
-                                )
-                        }
-                        .buttonStyle(.glass)
-                    }
-                }
-            }
-        }
-    }
-    
-    private func presetButton(colors: [Color], selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Group {
-                if colors.count == 1 {
-                    RoundedRectangle(cornerRadius: 6).fill(colors[0])
-                } else {
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing))
-                }
-            }
-            .frame(height: 34)
-            .overlay(RoundedRectangle(cornerRadius: 6).stroke(selected ? Color.white : Color.clear, lineWidth: 2))
-        }
-        .buttonStyle(.glass)
-    }
-    
 }
 
 // MARK: - Pixelate Overlay View
