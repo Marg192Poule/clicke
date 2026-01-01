@@ -1,3 +1,0 @@
-# MVVM : Managers
-
-Ce sont tous les services reutilisable, dans notre cas ça va etre les toast, hotkeys etc...

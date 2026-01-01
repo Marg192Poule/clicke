@@ -8,12 +8,21 @@
 import SwiftUI
 
 struct ContentView: View {
+    let toastManager = ToastManager()
+    
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
+        VStack(spacing: 20) {
+            Text("Test Managers")
+                .font(.title)
+            
+            Button("Test Toast") {
+                toastManager.show(
+                    message: "Hello Toast!", 
+                    icon: "checkmark.circle", 
+                    success: true
+                )
+            }
+            .buttonStyle(.borderedProminent)
         }
         .padding()
     }

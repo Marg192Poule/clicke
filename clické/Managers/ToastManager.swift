@@ -51,6 +51,102 @@ class ToastManager {
             window.animator().alphaValue = 1
         }
 
-        //let workItem
+        let workItem = DispatchWorkItem { [weak self] in 
+            NSAnimationContext.runAnimationGroup({ context in 
+                context.duration = 0.3
+                context.timingFunction = CAMediaTimingFunction(name: .easeIn)
+                window.animator().alphaValue = 0
+            }) {
+                window.close()
+                self?.popupWindow = nil
+            }
+        }
+        dismissWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.8, execute: workItem)
+    }
+
+    func showWithEditOption(message: String, icon: String, screenshotImage: NSImage) {
+        popupWindow?.close()
+        dismissWorkItem?.cancel()
+        
+        let screen = NSScreen.main ?? NSScreen.screens[0]
+        let window = NSPanel(
+            contentRect: screen.frame,
+            styleMask: [.fullSizeContentView, .borderless, .utilityWindow, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        
+        window.level = .screenSaver
+        window.backgroundColor = .clear
+        window.isOpaque = false
+        window.hasShadow = false
+        window.ignoresMouseEvents = false // Allow interaction!
+        window.collectionBehavior = [.fullScreenAuxiliary, .canJoinAllSpaces, .stationary, .ignoresCycle]
+        
+        // Store reference for closure
+        weak let weakSelf = self
+        let capturedImage = screenshotImage
+        
+        // Create interactive toast
+        let toastView = InteractiveToastView(
+            message: message,
+            icon: icon,
+            onEdit: {
+                weakSelf?.dismiss()
+                ScreenshotEditorWindow.shared.show(with: capturedImage)
+            }
+        )
+        
+        // Wrap in a container that allows click through except on the toast
+        let containerView = ZStack {
+            // Invisible click through background
+            Color.clear
+                .contentShape(Rectangle())
+                .allowsHitTesting(false)
+            
+            VStack {
+                toastView
+                    .padding(.top, 50)
+                Spacer()
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        
+        window.contentView = NSHostingView(rootView: containerView)
+        
+        // Fade in
+        window.alphaValue = 0
+        window.orderFront(nil)
+        popupWindow = window
+        
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.2
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            window.animator().alphaValue = 1
+        }
+        
+        // Auto-dismiss after 3 seconds
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.dismiss()
+        }
+        dismissWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0, execute: workItem)
+    }
+
+    func dismiss() {
+        dismissWorkItem?.cancel()
+        dismissWorkItem = nil
+        
+        guard let window = popupWindow else { return }
+        
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.3
+            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            window.animator().alphaValue = 0
+        }) { [weak self] in
+            window.close()
+            self?.popupWindow = nil
+        }
     }
 }

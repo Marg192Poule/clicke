@@ -23,7 +23,7 @@ class HotkeyManager {
         // event capture even if the app is not active
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
             if self?.currentConfiguration.matches(event: event) == true {
-                self?onHotkeyPressed?()
+                self?.onHotkeyPressed?()
             }
         }
         
