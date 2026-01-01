@@ -9,10 +9,11 @@ import SwiftUI
 
 @main
 struct clicke_App: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+
     var body: some Scene {
-        WindowGroup {
-            ContentView()
-            //TestManagersView()
+        SwiftUI.Settings {
+            EmptyView() // C'est empty pour que ce soit uniquement une menu tab app
         }
     }
 }
