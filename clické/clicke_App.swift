@@ -11,8 +11,8 @@ import SwiftUI
 struct clicke_App: App {
     var body: some Scene {
         WindowGroup {
-            //ContentView()
-            TestManagersView()
+            ContentView()
+            //TestManagersView()
         }
     }
 }

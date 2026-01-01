@@ -104,28 +104,28 @@ struct Preset: Identifiable, Equatable {
     
     static let presets: [Preset] = [
         // neutral
-        Preset(colors: [Color(hex: "ffffff")], isPremium: false),
-        Preset(colors: [Color(hex: "2d2d2d")], isPremium: false),
-        Preset(colors: [Color(hex: "8b7355"), Color(hex: "d4c4a8")], isPremium: false),
-        Preset(colors: [Color(hex: "4a6572"), Color(hex: "8fb3c9")], isPremium: false),
+        Preset(colors: [Color("ffffff")], isPremium: false),
+        Preset(colors: [Color("2d2d2d")], isPremium: false),
+        Preset(colors: [Color("8b7355"), Color("d4c4a8")], isPremium: false),
+        Preset(colors: [Color("4a6572"), Color("8fb3c9")], isPremium: false),
         
         // cold
-        Preset(colors: [Color(hex: "f5f5f5")], isPremium: false),
-        Preset(colors: [Color(hex: "ffd93d"), Color(hex: "ff6b6b")], isPremium: false),
-        Preset(colors: [Color(hex: "c9b037"), Color(hex: "6b5b3b")], isPremium: false),
-        Preset(colors: [Color(hex: "667eea"), Color(hex: "764ba2")], isPremium: false),
+        Preset(colors: [Color("f5f5f5")], isPremium: false),
+        Preset(colors: [Color("ffd93d"), Color("ff6b6b")], isPremium: false),
+        Preset(colors: [Color("c9b037"), Color("6b5b3b")], isPremium: false),
+        Preset(colors: [Color("667eea"), Color("764ba2")], isPremium: false),
         
         // warm
-        Preset(colors: [Color(hex: "f0e6d3")], isPremium: false),
-        Preset(colors: [Color(hex: "ff9a56"), Color(hex: "ff6b95")], isPremium: false),
-        Preset(colors: [Color(hex: "a8edea"), Color(hex: "fed6e3")], isPremium: false),
-        Preset(colors: [Color(hex: "11998e"), Color(hex: "38ef7d")], isPremium: false),
+        Preset(colors: [Color("f0e6d3")], isPremium: false),
+        Preset(colors: [Color("ff9a56"), Color("ff6b95")], isPremium: false),
+        Preset(colors: [Color("a8edea"), Color("fed6e3")], isPremium: false),
+        Preset(colors: [Color("11998e"), Color("38ef7d")], isPremium: false),
         
         // dark
-        Preset(colors: [Color(hex: "1a1a2e")], isPremium: false),
-        Preset(colors: [Color(hex: "f953c6"), Color(hex: "b91d73")], isPremium: false),
-        Preset(colors: [Color(hex: "4facfe"), Color(hex: "00f2fe")], isPremium: false),
-        Preset(colors: [Color(hex: "ee0979"), Color(hex: "ff6a00")], isPremium: false),
+        Preset(colors: [Color("1a1a2e")], isPremium: false),
+        Preset(colors: [Color("f953c6"), Color("b91d73")], isPremium: false),
+        Preset(colors: [Color("4facfe"), Color("00f2fe")], isPremium: false),
+        Preset(colors: [Color("ee0979"), Color("ff6a00")], isPremium: false),
     ]
 }
 
@@ -137,22 +137,22 @@ struct ShadowScene: Identifiable, Equatable {
     let isTexture: Bool
     
     static let scenes: [ShadowScene] = [
-        ShadowScene(name: "Cream", colors: [Color(hex: "f5e6d3"), Color(hex: "e8d4b8")], isTexture: true),
-        ShadowScene(name: "Sand", colors: [Color(hex: "d4b896"), Color(hex: "c4a576")], isTexture: true),
-        ShadowScene(name: "Paper", colors: [Color(hex: "f8f8f8"), Color(hex: "e8e8e8")], isTexture: true),
-        ShadowScene(name: "Light Wood", colors: [Color(hex: "deb887"), Color(hex: "c4a574")], isTexture: true),
-        ShadowScene(name: "Birch", colors: [Color(hex: "f5deb3"), Color(hex: "daa520")], isTexture: true),
-        ShadowScene(name: "Plant", colors: [Color(hex: "90a955"), Color(hex: "4f772d")], isTexture: true),
-        ShadowScene(name: "Concrete", colors: [Color(hex: "95a5a6"), Color(hex: "7f8c8d")], isTexture: true),
-        ShadowScene(name: "Pine", colors: [Color(hex: "d2b48c"), Color(hex: "bc9b6a")], isTexture: true),
-        ShadowScene(name: "Marble", colors: [Color(hex: "ecf0f1"), Color(hex: "bdc3c7")], isTexture: true),
-        ShadowScene(name: "Oak", colors: [Color(hex: "8b4513"), Color(hex: "654321")], isTexture: true),
-        ShadowScene(name: "Slate", colors: [Color(hex: "708090"), Color(hex: "4a5568")], isTexture: true),
-        ShadowScene(name: "Walnut", colors: [Color(hex: "5d4037"), Color(hex: "3e2723")], isTexture: true),
-        ShadowScene(name: "Black Marble", colors: [Color(hex: "2c3e50"), Color(hex: "1a252f")], isTexture: true),
-        ShadowScene(name: "Grunge", colors: [Color(hex: "3d3d3d"), Color(hex: "1a1a1a")], isTexture: true),
-        ShadowScene(name: "Metal", colors: [Color(hex: "4a4a4a"), Color(hex: "2d2d2d")], isTexture: true),
-        ShadowScene(name: "Gold", colors: [Color(hex: "ffd700"), Color(hex: "b8860b")], isTexture: true),
+        ShadowScene(name: "Cream", colors: [Color("f5e6d3"), Color("e8d4b8")], isTexture: true),
+        ShadowScene(name: "Sand", colors: [Color("d4b896"), Color("c4a576")], isTexture: true),
+        ShadowScene(name: "Paper", colors: [Color("f8f8f8"), Color("e8e8e8")], isTexture: true),
+        ShadowScene(name: "Light Wood", colors: [Color("deb887"), Color("c4a574")], isTexture: true),
+        ShadowScene(name: "Birch", colors: [Color("f5deb3"), Color("daa520")], isTexture: true),
+        ShadowScene(name: "Plant", colors: [Color("90a955"), Color("4f772d")], isTexture: true),
+        ShadowScene(name: "Concrete", colors: [Color("95a5a6"), Color("7f8c8d")], isTexture: true),
+        ShadowScene(name: "Pine", colors: [Color("d2b48c"), Color("bc9b6a")], isTexture: true),
+        ShadowScene(name: "Marble", colors: [Color("ecf0f1"), Color("bdc3c7")], isTexture: true),
+        ShadowScene(name: "Oak", colors: [Color("8b4513"), Color("654321")], isTexture: true),
+        ShadowScene(name: "Slate", colors: [Color("708090"), Color("4a5568")], isTexture: true),
+        ShadowScene(name: "Walnut", colors: [Color("5d4037"), Color("3e2723")], isTexture: true),
+        ShadowScene(name: "Black Marble", colors: [Color("2c3e50"), Color("1a252f")], isTexture: true),
+        ShadowScene(name: "Grunge", colors: [Color("3d3d3d"), Color("1a1a1a")], isTexture: true),
+        ShadowScene(name: "Metal", colors: [Color("4a4a4a"), Color("2d2d2d")], isTexture: true),
+        ShadowScene(name: "Gold", colors: [Color("ffd700"), Color("b8860b")], isTexture: true),
     ]
 }
 
@@ -162,10 +162,10 @@ struct SolidColor: Identifiable, Equatable {
     let color: Color
     
     static let colors: [SolidColor] = [
-        SolidColor(color: Color(hex: "f8f9fa")),
-        SolidColor(color: Color(hex: "343a40")),
-        SolidColor(color: Color(hex: "adb5bd")),
-        SolidColor(color: Color(hex: "dee2e6")),
+        SolidColor(color: Color("f8f9fa")),
+        SolidColor(color: Color("343a40")),
+        SolidColor(color: Color("adb5bd")),
+        SolidColor(color: Color("dee2e6")),
     ]
 }
 
@@ -176,14 +176,14 @@ struct GradientPreset: Identifiable, Equatable {
     let angle: Double
     
     static let presets: [GradientPreset] = [
-        GradientPreset(colors: [Color(hex: "ff6b6b"), Color(hex: "feca57")], angle: 135),
-        GradientPreset(colors: [Color(hex: "667eea"), Color(hex: "764ba2")], angle: 135),
-        GradientPreset(colors: [Color(hex: "a8edea"), Color(hex: "fed6e3")], angle: 135),
-        GradientPreset(colors: [Color(hex: "11998e"), Color(hex: "38ef7d")], angle: 135),
-        GradientPreset(colors: [Color(hex: "fc466b"), Color(hex: "3f5efb")], angle: 135),
-        GradientPreset(colors: [Color(hex: "00c6fb"), Color(hex: "005bea")], angle: 135),
-        GradientPreset(colors: [Color(hex: "f093fb"), Color(hex: "f5576c")], angle: 135),
-        GradientPreset(colors: [Color(hex: "4facfe"), Color(hex: "00f2fe")], angle: 135),
+        GradientPreset(colors: [Color("ff6b6b"), Color("feca57")], angle: 135),
+        GradientPreset(colors: [Color("667eea"), Color("764ba2")], angle: 135),
+        GradientPreset(colors: [Color("a8edea"), Color("fed6e3")], angle: 135),
+        GradientPreset(colors: [Color("11998e"), Color("38ef7d")], angle: 135),
+        GradientPreset(colors: [Color("fc466b"), Color("3f5efb")], angle: 135),
+        GradientPreset(colors: [Color("00c6fb"), Color("005bea")], angle: 135),
+        GradientPreset(colors: [Color("f093fb"), Color("f5576c")], angle: 135),
+        GradientPreset(colors: [Color("4facfe"), Color("00f2fe")], angle: 135),
     ]
 }
 
@@ -245,12 +245,7 @@ struct ScreenshotStyleConfig: Equatable {
     // Mockup
     var mockupStyle: MockupStyle = .defaultStyle
     var showMockup: Bool = true
-    var mockupBorderSize: CGFloat = 3 
-    
-    // Device Frame
-    var deviceFrame: DeviceFrame = .none
-    var showDeviceFrame: Bool = false
-    var frameColorScheme: FrameColorScheme = .dark
+    var mockupBorderSize: CGFloat = 3
     
     // Border
     var borderStyle: BorderStyle = .curved
@@ -266,17 +261,11 @@ struct ScreenshotStyleConfig: Equatable {
     var screenshotOffset: CGSize = .zero // Offset to move screenshot within the canvas
     
     // Background
-    var backgroundType: BackgroundType = .color
-    var selectedMagicPreset: MagicPreset? = MagicPreset.presets[7] // Default purple gradient
     var selectedShadowScene: ShadowScene? = nil
     var selectedSolidColor: SolidColor? = nil
     var selectedGradient: GradientPreset? = nil
     var backgroundImageURL: URL? = nil
     var customColor: Color = .white
-    
-    // Shadow Scene
-    var shadowSceneMode: ShadowSceneMode = .underlay
-    var shadowSceneOpacity: Double = 80
     
     // Social Media Export
     var selectedSocialPreset: SocialMediaPreset? = nil
