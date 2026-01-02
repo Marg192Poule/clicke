@@ -1,9 +1,12 @@
 import SwiftUI
+internal import Combine
 import AppKit
 import ApplicationServices
 
 struct PermissionsSectionView: View {
     @Binding var showAlert: Bool
+    @State private var hasAccessibility = false
+    @State private var timerSubscription: AnyCancellable?
     
     var body: some View {
         Section {
@@ -11,14 +14,14 @@ struct PermissionsSectionView: View {
                 permissionCard(
                     title: "Accessibility",
                     icon: "accessibility",
-                    status: checkAccessibilityPermissions(),
+                    status: hasAccessibility,
                     action: {
                         openAccessibilitySettings()
                     }
                 )
             }
             
-            if !checkAccessibilityPermissions() {
+            if !hasAccessibility {
                 VStack(alignment: .leading, spacing: 6) {
                     Label {
                         Text("Accessibility is required for BetterShot to listen to your keyboard shortcut.")
@@ -44,6 +47,28 @@ struct PermissionsSectionView: View {
         } header: {
             Text("Permissions")
         }
+        .onAppear {
+            hasAccessibility = checkAccessibilityPermissions()
+            // Démarrer le timer seulement si pas encore autorisé
+            if !hasAccessibility {
+                startPolling()
+            }
+        }
+        .onDisappear {
+            timerSubscription?.cancel()
+        }
+    }
+    
+    private func startPolling() {
+        timerSubscription = Timer.publish(every: 2, on: .main, in: .common)
+            .autoconnect()
+            .sink { _ in
+                hasAccessibility = checkAccessibilityPermissions()
+                // Arrêter le timer une fois autorisé
+                if hasAccessibility {
+                    timerSubscription?.cancel()
+                }
+            }
     }
     
     @ViewBuilder

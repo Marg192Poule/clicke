@@ -52,10 +52,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
 
         if let button = statusItem?.button {
-            button.image = NSImage(
-                systemSymbolName: "camera.viewfinder", 
+            let config = NSImage.SymbolConfiguration(pointSize: 17, weight: .regular)
+            let image = NSImage(
+                systemSymbolName: "c.square.fill", 
                 accessibilityDescription: "Screenshot"
-            )
+            )?.withSymbolConfiguration(config)
+            image?.isTemplate = true
+            button.image = image
         }
 
         let menu = NSMenu()
