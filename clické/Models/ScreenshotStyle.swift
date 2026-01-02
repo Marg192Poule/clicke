@@ -26,27 +26,19 @@ enum MockupStyle: String, CaseIterable, Identifiable {
         case .border: return "Border"
         }
     }
-}
-
-// MARK: - Device Frame
-enum DeviceFrame: String, CaseIterable, Identifiable {
-    case none
-    case macWindow
-    case browser
-    case iphone
-    case ipad
-    case macbook
-    case imac
     
-    var id: String { rawValue }
-}
-
-// MARK: - Frame Color Scheme
-enum FrameColorScheme: String, CaseIterable, Identifiable {
-    case dark
-    case light
-    
-    var id: String { rawValue }
+    var gradient: LinearGradient {
+        switch self {
+        case .defaultStyle: return LinearGradient(colors: [.gray.opacity(0.3)], startPoint: .top, endPoint: .bottom)
+        case .glassLight: return LinearGradient(colors: [.white.opacity(0.8), .white.opacity(0.5)], startPoint: .top, endPoint: .bottom)
+        case .glassDark: return LinearGradient(colors: [.black.opacity(0.6), .black.opacity(0.8)], startPoint: .top, endPoint: .bottom)
+        case .liquidGlass: return LinearGradient(colors: [.orange, .pink], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .insetLight: return LinearGradient(colors: [.gray.opacity(0.2), .gray.opacity(0.1)], startPoint: .top, endPoint: .bottom)
+        case .insetDark: return LinearGradient(colors: [.black.opacity(0.4), .black.opacity(0.6)], startPoint: .top, endPoint: .bottom)
+        case .outline: return LinearGradient(colors: [.clear], startPoint: .top, endPoint: .bottom)
+        case .border: return LinearGradient(colors: [.gray.opacity(0.5)], startPoint: .top, endPoint: .bottom)
+        }
+    }
 }
 
 // MARK: - Border Style
@@ -74,29 +66,11 @@ enum BorderStyle: String, CaseIterable, Identifiable {
     }
 }
 
-// MARK: - Shadow Style (comme shots.so)
-enum ShadowStyle: String, CaseIterable, Identifiable {
-    case none
-    case spread
-    case hug
-    case adaptive
-    
-    var id: String { rawValue }
-    
-    var displayName: String {
-        switch self {
-        case .none: return "None"
-        case .spread: return "Spread"
-        case .hug: return "Hug"
-        case .adaptive: return "Adaptiv"
-        }
-    }
-}
-
 // MARK: - Background Type
 enum BackgroundType: String, CaseIterable, Identifiable {
     case transparent
     case color
+    case gradient
     case image
     
     var id: String { rawValue }
@@ -105,7 +79,17 @@ enum BackgroundType: String, CaseIterable, Identifiable {
         switch self {
         case .transparent: return "Transparent"
         case .color: return "Color"
+        case .gradient: return "Gradient"
         case .image: return "Image"
+        }
+    }
+    
+    var icon: String {
+        switch self {
+        case .transparent: return "checkerboard.rectangle"
+        case .color: return "circle.fill"
+        case .gradient: return "circle.lefthalf.striped.horizontal"
+        case .image: return "photo"
         }
     }
 }
@@ -201,6 +185,283 @@ struct GradientPreset: Identifiable, Equatable {
     ]
 }
 
+// MARK: - Mesh Gradient Style
+enum MeshGradientStyle: String, CaseIterable, Identifiable {
+    case mesh
+    case linear
+    case radial
+    case angular
+    
+    var id: String { rawValue }
+    
+    var displayName: String {
+        switch self {
+        case .mesh: return "Mesh"
+        case .linear: return "Linear"
+        case .radial: return "Radial"
+        case .angular: return "Angular"
+        }
+    }
+    
+    var icon: String {
+        switch self {
+        case .mesh: return "circle.hexagongrid.fill"
+        case .linear: return "arrow.up.right"
+        case .radial: return "circle.dashed"
+        case .angular: return "arrow.triangle.2.circlepath"
+        }
+    }
+}
+
+// MARK: - Mesh Gradient Configuration
+struct MeshGradientConfig: Equatable {
+    var style: MeshGradientStyle = .mesh
+    var color1: Color = Color(hex: "667eea")  // Primary accent
+    var color2: Color = Color(hex: "f953c6")  // Secondary accent
+    var color3: Color = Color(hex: "0f0c29")  // Deep background
+    var color4: Color = Color(hex: "764ba2")  // Mid tone
+    
+    // Effects
+    var blurAmount: Double = 60              // Blur for softer transitions (0-150)
+    var noiseAmount: Double = 0              // Grain/noise overlay (0-100)
+    var saturation: Double = 100             // Color saturation (0-200)
+    var brightness: Double = 100             // Brightness adjustment (50-150)
+    
+    static let `default` = MeshGradientConfig()
+    
+    // Create gradient view based on style with effects
+    @ViewBuilder
+    func gradientView(size: CGSize) -> some View {
+        ZStack {
+            gradientBase(size: size)
+                .blur(radius: blurAmount * 0.5)
+                .saturation(saturation / 100)
+                .brightness((brightness - 100) / 100)
+            
+            // Noise overlay
+            if noiseAmount > 0 {
+                GrainOverlay(intensity: noiseAmount / 100)
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private func gradientBase(size: CGSize) -> some View {
+        switch style {
+        case .mesh:
+            // Organic mesh with offset points for fluid look
+            MeshGradient(
+                width: 4,
+                height: 4,
+                points: [
+                    // Row 0 - slight wave
+                    [0.0, 0.0], [0.35, -0.05], [0.7, 0.05], [1.0, 0.0],
+                    // Row 1 - organic curve
+                    [-0.05, 0.3], [0.25, 0.35], [0.75, 0.25], [1.05, 0.35],
+                    // Row 2 - flowing
+                    [0.0, 0.65], [0.4, 0.7], [0.6, 0.6], [1.0, 0.7],
+                    // Row 3 - base wave
+                    [0.0, 1.0], [0.3, 1.05], [0.7, 0.95], [1.0, 1.0]
+                ],
+                colors: [
+                    // Row 0
+                    color3, color1, color2, color3,
+                    // Row 1
+                    color1, color4, color1, color2,
+                    // Row 2
+                    color2, color1, color4, color1,
+                    // Row 3
+                    color3, color2, color1, color3
+                ],
+                smoothsColors: true
+            )
+        case .linear:
+            LinearGradient(
+                stops: [
+                    .init(color: color1, location: 0.0),
+                    .init(color: color4, location: 0.3),
+                    .init(color: color2, location: 0.6),
+                    .init(color: color3, location: 1.0)
+                ],
+                startPoint: UnitPoint(x: 0, y: 0),
+                endPoint: UnitPoint(x: 1, y: 1)
+            )
+        case .radial:
+            ZStack {
+                // Base layer
+                RadialGradient(
+                    colors: [color1, color2, color3],
+                    center: .center,
+                    startRadius: 0,
+                    endRadius: max(size.width, size.height) * 0.7
+                )
+                // Overlay for depth
+                RadialGradient(
+                    colors: [color4.opacity(0.6), .clear],
+                    center: UnitPoint(x: 0.3, y: 0.3),
+                    startRadius: 0,
+                    endRadius: max(size.width, size.height) * 0.4
+                )
+            }
+        case .angular:
+            ZStack {
+                AngularGradient(
+                    stops: [
+                        .init(color: color1, location: 0.0),
+                        .init(color: color4, location: 0.25),
+                        .init(color: color2, location: 0.5),
+                        .init(color: color3, location: 0.75),
+                        .init(color: color1, location: 1.0)
+                    ],
+                    center: .center
+                )
+                // Soft center
+                RadialGradient(
+                    colors: [color3.opacity(0.8), .clear],
+                    center: .center,
+                    startRadius: 0,
+                    endRadius: min(size.width, size.height) * 0.3
+                )
+            }
+        }
+    }
+}
+
+// MARK: - Grain/Noise Overlay
+struct GrainOverlay: View {
+    let intensity: Double // 0 to 1
+    
+    var body: some View {
+        Canvas { context, size in
+            // Film grain effect with varying density
+            let pixelSize: CGFloat = 2
+            let cols = Int(size.width / pixelSize)
+            let rows = Int(size.height / pixelSize)
+            
+            for row in 0..<rows {
+                for col in 0..<cols {
+                    let randomValue = Double.random(in: 0...1)
+                    // Only draw some pixels for grain effect
+                    if randomValue < 0.5 {
+                        let alpha = randomValue * intensity * 0.3
+                        let rect = CGRect(
+                            x: CGFloat(col) * pixelSize,
+                            y: CGFloat(row) * pixelSize,
+                            width: pixelSize,
+                            height: pixelSize
+                        )
+                        let color = randomValue > 0.25 ? Color.white : Color.black
+                        context.fill(
+                            Rectangle().path(in: rect),
+                            with: .color(color.opacity(alpha))
+                        )
+                    }
+                }
+            }
+        }
+        .allowsHitTesting(false)
+        .blendMode(.overlay)
+    }
+}
+
+// MARK: - Mesh Gradient Presets
+struct MeshGradientPreset: Identifiable, Equatable {
+    let id = UUID()
+    let name: String
+    let config: MeshGradientConfig
+    
+    static func == (lhs: MeshGradientPreset, rhs: MeshGradientPreset) -> Bool {
+        lhs.id == rhs.id
+    }
+    
+    static let presets: [MeshGradientPreset] = [
+        // Cosmic Purple - vibrant and modern
+        MeshGradientPreset(name: "Cosmic", config: MeshGradientConfig(
+            color1: Color(hex: "667eea"),
+            color2: Color(hex: "f953c6"),
+            color3: Color(hex: "0f0c29"),
+            color4: Color(hex: "764ba2")
+        )),
+        // Ocean Depth
+        MeshGradientPreset(name: "Ocean", config: MeshGradientConfig(
+            color1: Color(hex: "00d2ff"),
+            color2: Color(hex: "3a7bd5"),
+            color3: Color(hex: "0a192f"),
+            color4: Color(hex: "667eea")
+        )),
+        // Aurora Borealis
+        MeshGradientPreset(name: "Aurora", config: MeshGradientConfig(
+            color1: Color(hex: "00f260"),
+            color2: Color(hex: "0575e6"),
+            color3: Color(hex: "0d1b2a"),
+            color4: Color(hex: "38ef7d")
+        )),
+        // Sunset Vibes
+        MeshGradientPreset(name: "Sunset", config: MeshGradientConfig(
+            color1: Color(hex: "ff6b6b"),
+            color2: Color(hex: "feca57"),
+            color3: Color(hex: "1a1a2e"),
+            color4: Color(hex: "ff9ff3")
+        )),
+        // Neon Nights
+        MeshGradientPreset(name: "Neon", config: MeshGradientConfig(
+            color1: Color(hex: "f953c6"),
+            color2: Color(hex: "00ffff"),
+            color3: Color(hex: "0a0a0a"),
+            color4: Color(hex: "b91d73")
+        )),
+        // Cotton Candy
+        MeshGradientPreset(name: "Candy", config: MeshGradientConfig(
+            color1: Color(hex: "ffecd2"),
+            color2: Color(hex: "fcb69f"),
+            color3: Color(hex: "f8b4d9"),
+            color4: Color(hex: "a8edea")
+        )),
+        // Deep Space
+        MeshGradientPreset(name: "Space", config: MeshGradientConfig(
+            color1: Color(hex: "4158d0"),
+            color2: Color(hex: "c850c0"),
+            color3: Color(hex: "000000"),
+            color4: Color(hex: "ffcc70")
+        )),
+        // Emerald Dream
+        MeshGradientPreset(name: "Emerald", config: MeshGradientConfig(
+            color1: Color(hex: "11998e"),
+            color2: Color(hex: "38ef7d"),
+            color3: Color(hex: "0b3d0b"),
+            color4: Color(hex: "56ab2f")
+        )),
+        // Fire & Ice
+        MeshGradientPreset(name: "Contrast", config: MeshGradientConfig(
+            color1: Color(hex: "ff416c"),
+            color2: Color(hex: "74ebd5"),
+            color3: Color(hex: "0f0f0f"),
+            color4: Color(hex: "ff4b2b")
+        )),
+        // Lavender Mist
+        MeshGradientPreset(name: "Lavender", config: MeshGradientConfig(
+            color1: Color(hex: "e0c3fc"),
+            color2: Color(hex: "8ec5fc"),
+            color3: Color(hex: "2d1b69"),
+            color4: Color(hex: "c471ed")
+        )),
+        // Midnight Blue
+        MeshGradientPreset(name: "Midnight", config: MeshGradientConfig(
+            color1: Color(hex: "2c3e50"),
+            color2: Color(hex: "4ca1af"),
+            color3: Color(hex: "000428"),
+            color4: Color(hex: "004e92")
+        )),
+        // Warm Glow
+        MeshGradientPreset(name: "Warm", config: MeshGradientConfig(
+            color1: Color(hex: "f7971e"),
+            color2: Color(hex: "ffd200"),
+            color3: Color(hex: "2d1f0f"),
+            color4: Color(hex: "ff5f6d")
+        )),
+    ]
+}
+
 // MARK: - Shadow Scene Mode
 enum ShadowSceneMode: String, CaseIterable, Identifiable {
     case underlay
@@ -248,6 +509,22 @@ enum RedactStyle: String, CaseIterable, Identifiable {
         case .blur: return "Blur"
         case .pixelate: return "Pixelate"
         case .blackBar: return "Black Bar"
+        }
+    }
+    
+    var icon: String {
+        switch self {
+        case .blur: return "aqi.medium"
+        case .pixelate: return "square.dashed"
+        case .blackBar: return "rectangle.fill"
+        }
+    }
+    
+    var color: Color {
+        switch self {
+        case .blur: return .purple
+        case .pixelate: return .orange
+        case .blackBar: return .gray
         }
     }
 }
@@ -312,18 +589,9 @@ struct ScreenshotStyleConfig: Equatable {
     var showMockup: Bool = true
     var mockupBorderSize: CGFloat = 3 // Taille du contour du style (0-10)
     
-    // Device Frame
-    var deviceFrame: DeviceFrame = .none
-    var showDeviceFrame: Bool = false
-    var frameColorScheme: FrameColorScheme = .dark
-    
     // Border
     var borderStyle: BorderStyle = .curved
     var borderRadius: CGFloat = 20
-    
-    // Shadow
-    var shadowStyle: ShadowStyle = .spread
-    var shadowOpacity: Double = 40
     
     // Transform
     var rotation: Double = 0
@@ -338,6 +606,10 @@ struct ScreenshotStyleConfig: Equatable {
     var selectedGradient: GradientPreset? = nil
     var backgroundImageURL: URL? = nil
     var customColor: Color = .white
+    
+    // Mesh Gradient
+    var meshGradientConfig: MeshGradientConfig = .default
+    var selectedMeshPreset: MeshGradientPreset? = MeshGradientPreset.presets.first
     
     // Background Effects
     var backgroundNoise: Double = 0 // 0-100

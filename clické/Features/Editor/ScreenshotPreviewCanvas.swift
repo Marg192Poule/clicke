@@ -172,11 +172,6 @@ struct ScreenshotPreviewCanvas: View {
     }
     
     private var extraPadding: CGSize {
-        // Device frames take priority
-        if config.showDeviceFrame && config.deviceFrame != .none {
-            return deviceFrameExtraPadding
-        }
-        
         // Mockup styles
         guard config.showMockup else { return .zero }
         
@@ -197,98 +192,21 @@ struct ScreenshotPreviewCanvas: View {
         }
     }
     
-    private var deviceFrameExtraPadding: CGSize {
-        switch config.deviceFrame {
-        case .none:
-            return .zero
-        case .macWindow:
-            return CGSize(width: 0, height: 36) // Title bar height
-        case .browser:
-            return CGSize(width: 0, height: 48) // Browser bar height
-        case .iphone:
-            return CGSize(width: 40, height: 80) // iPhone frame padding
-        case .ipad:
-            return CGSize(width: 50, height: 70) // iPad frame padding
-        case .macbook:
-            return CGSize(width: 60, height: 100) // MacBook frame + keyboard
-        case .imac:
-            return CGSize(width: 60, height: 120) // iMac frame + stand
-        }
-    }
-    
     // MARK: - Screenshot Content
     @ViewBuilder
     private var screenshotContent: some View {
         contentView
-            .shadow(
-                color: shadowColor,
-                radius: shadowRadius,
-                x: 0,
-                y: shadowOffsetY
-            )
     }
     
     @ViewBuilder
     private var contentView: some View {
-        if config.showDeviceFrame, config.deviceFrame != .none {
-            // Device Frame mode
-            deviceFrameWrappedImage
-        } else if config.showMockup {
+        if config.showMockup {
             // Mockup style mode
             styledScreenshot
         } else {
             // Plain screenshot
             Image(nsImage: image)
                 .clipShape(RoundedRectangle(cornerRadius: config.borderRadius))
-        }
-    }
-    
-    // MARK: - Device Frame Wrapped Image
-    @ViewBuilder
-    private var deviceFrameWrappedImage: some View {
-        switch config.deviceFrame {
-        case .none:
-            styledScreenshot
-        case .macWindow:
-            MacWindowFrame(image: image, isDark: config.frameColorScheme == .dark, cornerRadius: config.borderRadius)
-        case .browser:
-            BrowserFrame(image: image, isDark: config.frameColorScheme == .dark, cornerRadius: config.borderRadius)
-        case .iphone:
-            iPhoneFrame(image: image)
-        case .ipad:
-            iPadFrame(image: image)
-        case .macbook:
-            MacBookFrame(image: image)
-        case .imac:
-            iMacFrame(image: image)
-        }
-    }
-    
-    // MARK: - Shadow Properties
-    private var shadowColor: Color {
-        switch config.shadowStyle {
-        case .none: return .clear
-        case .spread: return .black.opacity(config.shadowOpacity / 100 * 0.6)
-        case .hug: return .black.opacity(config.shadowOpacity / 100 * 0.5)
-        case .adaptive: return .black.opacity(config.shadowOpacity / 100 * 0.45)
-        }
-    }
-    
-    private var shadowRadius: CGFloat {
-        switch config.shadowStyle {
-        case .none: return 0
-        case .spread: return 80
-        case .hug: return 30
-        case .adaptive: return 50
-        }
-    }
-    
-    private var shadowOffsetY: CGFloat {
-        switch config.shadowStyle {
-        case .none: return 0
-        case .spread: return 40
-        case .hug: return 15
-        case .adaptive: return 25
         }
     }
     
@@ -305,8 +223,16 @@ struct ScreenshotPreviewCanvas: View {
                 
             case .image:
                 imageBackground
+                
+            case .gradient:
+                gradientBackground
             }
         }
+    }
+    
+    @ViewBuilder
+    private var gradientBackground: some View {
+        config.meshGradientConfig.gradientView(size: CGSize(width: totalWidth, height: totalHeight))
     }
     
     @ViewBuilder
@@ -594,264 +520,6 @@ struct ScreenshotPreviewCanvas: View {
             Image(nsImage: image)
                 .clipShape(RoundedRectangle(cornerRadius: config.borderRadius))
         }
-    }
-}
-
-// MARK: - Device Frames
-
-struct MacWindowFrame: View {
-    let image: NSImage
-    let isDark: Bool
-    let cornerRadius: CGFloat
-    
-    var body: some View {
-        VStack(spacing: 0) {
-            // Title bar with traffic lights
-            HStack(spacing: 8) {
-                Circle().fill(Color(hex: "ff5f57")).frame(width: 12, height: 12)
-                Circle().fill(Color(hex: "febc2e")).frame(width: 12, height: 12)
-                Circle().fill(Color(hex: "28c840")).frame(width: 12, height: 12)
-                Spacer()
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .frame(maxWidth: .infinity)
-            .background(isDark ? Color(hex: "2d2d2d") : Color(hex: "e8e8e8"))
-            
-            // Screenshot content
-            Image(nsImage: image)
-                .resizable()
-                .scaledToFit()
-        }
-        .background(isDark ? Color(hex: "1c1c1e") : Color.white)
-        .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-        .overlay(
-            RoundedRectangle(cornerRadius: cornerRadius)
-                .stroke(isDark ? Color.white.opacity(0.2) : Color.black.opacity(0.15), lineWidth: 1)
-        )
-    }
-}
-
-struct BrowserFrame: View {
-    let image: NSImage
-    let isDark: Bool
-    let cornerRadius: CGFloat
-    
-    var body: some View {
-        VStack(spacing: 0) {
-            // Browser toolbar
-            HStack(spacing: 8) {
-                HStack(spacing: 6) {
-                    Circle().fill(Color(hex: "ff5f57")).frame(width: 12, height: 12)
-                    Circle().fill(Color(hex: "febc2e")).frame(width: 12, height: 12)
-                    Circle().fill(Color(hex: "28c840")).frame(width: 12, height: 12)
-                }
-                
-                Spacer()
-                
-                // URL bar
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.05))
-                    .frame(maxWidth: 300, maxHeight: 28)
-                    .overlay(
-                        HStack(spacing: 6) {
-                            Image(systemName: "lock.fill")
-                                .font(.system(size: 10))
-                            Text("screenshot.app")
-                                .font(.system(size: 12))
-                        }
-                        .foregroundColor(isDark ? .white.opacity(0.5) : .black.opacity(0.5))
-                    )
-                
-                Spacer()
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .frame(maxWidth: .infinity)
-            .background(isDark ? Color(hex: "2d2d2d") : Color(hex: "e8e8e8"))
-            
-            // Screenshot content
-            Image(nsImage: image)
-                .resizable()
-                .scaledToFit()
-        }
-        .background(isDark ? Color(hex: "1c1c1e") : Color.white)
-        .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-        .overlay(
-            RoundedRectangle(cornerRadius: cornerRadius)
-                .stroke(isDark ? Color.white.opacity(0.2) : Color.black.opacity(0.15), lineWidth: 1)
-        )
-    }
-}
-
-struct iPhoneFrame: View {
-    let image: NSImage
-    
-    var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 50)
-                .fill(Color(hex: "1c1c1e"))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 50)
-                        .stroke(Color(hex: "3a3a3c"), lineWidth: 3)
-                )
-            
-            Image(nsImage: image)
-                .resizable()
-                .scaledToFit()
-                .clipShape(RoundedRectangle(cornerRadius: 40))
-                .padding(12)
-            
-            VStack {
-                Capsule()
-                    .fill(Color.black)
-                    .frame(width: 100, height: 30)
-                    .padding(.top, 20)
-                Spacer()
-            }
-            
-            VStack {
-                Spacer()
-                Capsule()
-                    .fill(Color.white.opacity(0.3))
-                    .frame(width: 120, height: 5)
-                    .padding(.bottom, 8)
-            }
-        }
-        .aspectRatio(9/19.5, contentMode: .fit)
-        .frame(maxWidth: min(image.size.width + 24, 400))
-    }
-}
-
-struct iPadFrame: View {
-    let image: NSImage
-    
-    var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 24)
-                .fill(Color(hex: "1c1c1e"))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 24)
-                        .stroke(Color(hex: "3a3a3c"), lineWidth: 2)
-                )
-            
-            Image(nsImage: image)
-                .resizable()
-                .scaledToFit()
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .padding(16)
-        }
-        .aspectRatio(4/3, contentMode: .fit)
-        .frame(maxWidth: min(image.size.width + 32, 600))
-    }
-}
-
-struct MacBookFrame: View {
-    let image: NSImage
-    
-    var body: some View {
-        VStack(spacing: 0) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color(hex: "1c1c1e"))
-                
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFit()
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
-                    .padding(12)
-                
-                VStack {
-                    Circle()
-                        .fill(Color(hex: "2d2d2d"))
-                        .frame(width: 8, height: 8)
-                        .padding(.top, 4)
-                    Spacer()
-                }
-            }
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color(hex: "3a3a3c"), lineWidth: 2)
-            )
-            
-            // Hinge
-            ZStack {
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(
-                        LinearGradient(
-                            colors: [Color(hex: "4a4a4c"), Color(hex: "2d2d2d")],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-                    .frame(height: 16)
-                
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(Color(hex: "1c1c1e"))
-                    .frame(width: 80, height: 6)
-            }
-            .padding(.horizontal, 60)
-            
-            // Base
-            RoundedRectangle(cornerRadius: 4)
-                .fill(Color(hex: "2d2d2d"))
-                .frame(height: 8)
-                .padding(.horizontal, 40)
-        }
-        .frame(maxWidth: min(image.size.width + 24, 800))
-    }
-}
-
-struct iMacFrame: View {
-    let image: NSImage
-    
-    var body: some View {
-        VStack(spacing: 0) {
-            // Screen
-            ZStack {
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(Color(hex: "1c1c1e"))
-                
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFit()
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
-                    .padding(20)
-            }
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(Color(hex: "3a3a3c"), lineWidth: 2)
-            )
-            
-            // Chin
-            Rectangle()
-                .fill(Color(hex: "e0e0e0"))
-                .frame(height: 30)
-                .clipShape(
-                    .rect(
-                        topLeadingRadius: 0,
-                        bottomLeadingRadius: 16,
-                        bottomTrailingRadius: 16,
-                        topTrailingRadius: 0
-                    )
-                )
-            
-            // Stand
-            Path { path in
-                path.move(to: CGPoint(x: 80, y: 0))
-                path.addLine(to: CGPoint(x: 120, y: 50))
-                path.addLine(to: CGPoint(x: 80, y: 50))
-                path.addLine(to: CGPoint(x: 80, y: 0))
-            }
-            .fill(Color(hex: "c0c0c0"))
-            .frame(width: 200, height: 50)
-            
-            // Base
-            Ellipse()
-                .fill(Color(hex: "d0d0d0"))
-                .frame(width: 160, height: 20)
-        }
-        .frame(maxWidth: min(image.size.width + 40, 900))
     }
 }
 

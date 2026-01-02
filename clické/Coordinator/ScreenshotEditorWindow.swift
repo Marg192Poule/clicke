@@ -1,11 +1,30 @@
 import AppKit
 import SwiftUI
 
-class ScreenshotEditorWindow: NSObject, NSWindowDelegate {
+class ScreenshotEditorWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
     private var editorWindow: NSWindow?
     private var isClosing = false
     
     static let shared = ScreenshotEditorWindow()
+    
+    // Toolbar item identifiers
+    private struct ToolbarIdentifiers {
+        static let toolbar = NSToolbar.Identifier("ScreenshotEditorToolbar")
+        static let copyItem = NSToolbarItem.Identifier("CopyItem")
+        static let saveItem = NSToolbarItem.Identifier("SaveItem")
+        static let resetItem = NSToolbarItem.Identifier("ResetItem")
+        static let zoomFit = NSToolbarItem.Identifier("ZoomFitItem")
+        static let zoomActual = NSToolbarItem.Identifier("ZoomActualItem")
+        static let flexibleSpace = NSToolbarItem.Identifier.flexibleSpace
+        static let space = NSToolbarItem.Identifier.space
+    }
+    
+    // Notification names for toolbar actions
+    static let copyNotification = Notification.Name("ScreenshotEditorToolbarCopy")
+    static let saveNotification = Notification.Name("ScreenshotEditorToolbarSave")
+    static let resetNotification = Notification.Name("ScreenshotEditorToolbarReset")
+    static let zoomFitNotification = Notification.Name("ScreenshotEditorToolbarZoomFit")
+    static let zoomActualNotification = Notification.Name("ScreenshotEditorToolbarZoomActual")
     
     private override init() {
         super.init()
@@ -36,7 +55,7 @@ class ScreenshotEditorWindow: NSObject, NSWindowDelegate {
         
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: windowWidth, height: windowHeight),
-            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
+            styleMask: [.titled, .closable, .resizable, .fullSizeContentView, .unifiedTitleAndToolbar],
             backing: .buffered,
             defer: false
         )
@@ -48,6 +67,9 @@ class ScreenshotEditorWindow: NSObject, NSWindowDelegate {
         window.minSize = NSSize(width: 800, height: 600)
         window.center()
         window.delegate = self
+        
+        // Setup toolbar
+        setupToolbar(for: window)
         
         // Hide the standard window buttons (traffic lights) - we have our own
         window.standardWindowButton(.closeButton)?.isHidden = true
@@ -112,5 +134,123 @@ class ScreenshotEditorWindow: NSObject, NSWindowDelegate {
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         close()
         return false // We handle closing manually
+    }
+    
+    // MARK: - Toolbar Setup
+    private func setupToolbar(for window: NSWindow) {
+        let toolbar = NSToolbar(identifier: ToolbarIdentifiers.toolbar)
+        toolbar.delegate = self
+        toolbar.displayMode = .iconOnly
+        toolbar.allowsUserCustomization = false
+        window.toolbar = toolbar
+    }
+    
+    // MARK: - NSToolbarDelegate
+    func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
+        switch itemIdentifier {
+        case ToolbarIdentifiers.copyItem:
+            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+            item.label = "Copy"
+            item.paletteLabel = "Copy to Clipboard"
+            item.toolTip = "Copy screenshot to clipboard"
+            item.image = NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: "Copy")
+            item.target = self
+            item.action = #selector(toolbarCopyAction)
+            item.isBordered = true
+            return item
+            
+        case ToolbarIdentifiers.saveItem:
+            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+            item.label = "Save"
+            item.paletteLabel = "Save to File"
+            item.toolTip = "Save screenshot to file"
+            item.image = NSImage(systemSymbolName: "square.and.arrow.down", accessibilityDescription: "Save")
+            item.target = self
+            item.action = #selector(toolbarSaveAction)
+            item.isBordered = true
+            return item
+            
+        case ToolbarIdentifiers.resetItem:
+            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+            item.label = "Reset"
+            item.paletteLabel = "Reset Position"
+            item.toolTip = "Reset position and zoom"
+            item.image = NSImage(systemSymbolName: "arrow.counterclockwise", accessibilityDescription: "Reset")
+            item.target = self
+            item.action = #selector(toolbarResetAction)
+            item.isBordered = true
+            return item
+            
+        case ToolbarIdentifiers.zoomFit:
+            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+            item.label = "Fit"
+            item.paletteLabel = "Zoom to Fit"
+            item.toolTip = "Fit screenshot in view"
+            item.image = NSImage(systemSymbolName: "arrow.up.left.and.arrow.down.right", accessibilityDescription: "Fit")
+            item.target = self
+            item.action = #selector(toolbarZoomFitAction)
+            item.isBordered = true
+            return item
+            
+        case ToolbarIdentifiers.zoomActual:
+            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+            item.label = "100%"
+            item.paletteLabel = "Actual Size"
+            item.toolTip = "View at actual size"
+            item.image = NSImage(systemSymbolName: "1.magnifyingglass", accessibilityDescription: "100%")
+            item.target = self
+            item.action = #selector(toolbarZoomActualAction)
+            item.isBordered = true
+            return item
+            
+        default:
+            return nil
+        }
+    }
+    
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [
+            ToolbarIdentifiers.flexibleSpace,
+            ToolbarIdentifiers.zoomFit,
+            ToolbarIdentifiers.zoomActual,
+            ToolbarIdentifiers.space,
+            ToolbarIdentifiers.resetItem,
+            ToolbarIdentifiers.space,
+            ToolbarIdentifiers.saveItem,
+            ToolbarIdentifiers.copyItem
+        ]
+    }
+    
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [
+            ToolbarIdentifiers.copyItem,
+            ToolbarIdentifiers.saveItem,
+            ToolbarIdentifiers.resetItem,
+            ToolbarIdentifiers.zoomFit,
+            ToolbarIdentifiers.zoomActual,
+            ToolbarIdentifiers.flexibleSpace,
+            ToolbarIdentifiers.space
+        ]
+    }
+    
+    // MARK: - Toolbar Actions
+    @objc private func toolbarCopyAction() {
+        NotificationCenter.default.post(name: Self.copyNotification, object: nil)
+    }
+    
+    @objc private func toolbarSaveAction() {
+        NotificationCenter.default.post(name: Self.saveNotification, object: nil)
+    }
+    
+    @objc private func toolbarResetAction() {
+        NotificationCenter.default.post(name: Self.resetNotification, object: nil)
+    }
+    
+    @objc private func toolbarZoomFitAction() {
+        NotificationCenter.default.post(name: Self.zoomFitNotification, object: nil)
+    }
+    
+    @objc private func toolbarZoomActualAction() {
+        NotificationCenter.default.post(name: Self.zoomActualNotification, object: nil)
     }
 }

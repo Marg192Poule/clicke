@@ -52,11 +52,6 @@ class ScreenshotRenderer {
     }
     
     private func mockupExtraPadding() -> CGSize {
-        // Device frames take priority
-        if config.showDeviceFrame && config.deviceFrame != .none {
-            return deviceFrameExtraPadding()
-        }
-        
         guard config.showMockup else { return .zero }
         
         switch config.mockupStyle {
@@ -70,25 +65,6 @@ class ScreenshotRenderer {
             return CGSize(width: 28, height: 28)
         case .border:
             return CGSize(width: 6, height: 6)
-        }
-    }
-    
-    private func deviceFrameExtraPadding() -> CGSize {
-        switch config.deviceFrame {
-        case .none:
-            return .zero
-        case .macWindow:
-            return CGSize(width: 0, height: 36)
-        case .browser:
-            return CGSize(width: 0, height: 48)
-        case .iphone:
-            return CGSize(width: 40, height: 80)
-        case .ipad:
-            return CGSize(width: 50, height: 70)
-        case .macbook:
-            return CGSize(width: 60, height: 100)
-        case .imac:
-            return CGSize(width: 60, height: 120)
         }
     }
 }
