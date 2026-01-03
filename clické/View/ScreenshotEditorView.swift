@@ -30,6 +30,16 @@ struct ScreenshotEditorView: View {
             // Main canvas
             canvasView
                 .toolbar {
+                    ToolbarItem(placement: .navigation) {
+                        Button {
+                            withAnimation {
+                                columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
+                            }
+                        } label: {
+                            Image(systemName: "sidebar.left")
+                        }
+                    }
+                    
                     ToolbarItemGroup {
                         Button("Zoom Fit", systemImage: "arrow.up.left.and.arrow.down.right") {
                             viewModel.calculateFitZoom()
