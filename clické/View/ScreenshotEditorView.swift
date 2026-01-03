@@ -55,10 +55,18 @@ struct ScreenshotEditorView: View {
                         }
                     }
                     
-                    ToolbarItemGroup {
-                        Button("Save", systemImage: "square.and.arrow.down") {
-                            viewModel.saveAction()
+                    ToolbarItem(placement: .automatic) {
+                        Spacer()
+                    }
+                    
+                    ToolbarItem(placement: .automatic) {
+                        ShareLink(item: viewModel.getShareableImage(), preview: SharePreview("Screenshot", image: viewModel.getShareableImage())) {
+                            Label("Share", systemImage: "square.and.arrow.up")
+                                .labelStyle(.iconOnly)
                         }
+                    }
+                    
+                    ToolbarItem(placement: .automatic) {
                         Button("Copy", systemImage: "doc.on.doc") {
                             if let img = viewModel.copyAction() { onCopy(img) }
                         }
@@ -92,26 +100,24 @@ struct ScreenshotEditorView: View {
     // MARK: - Inspector Content (Sidebar)
     private var inspectorContent: some View {
         VStack(spacing: 0) {
-            // Tab selector at top
-            Picker("", selection: $selectedTab.animation(.easeInOut(duration: 0.2))) {
-                Text("style").tag(0)
-                Text("canvas").tag(1)
-                Text("export").tag(2)
+            // Tab selector at top - Xcode style
+            HStack(spacing: 0) {
+                tabButton(icon: "folder.fill", tag: 0, label: "Style")
+                tabButton(icon: "x.square.fill", tag: 1, label: "Canvas")
+                tabButton(icon: "bookmark.fill", tag: 2, label: "Export")
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(Color(nsColor: .quaternarySystemFill), in: RoundedRectangle(cornerRadius: 8))
+            .padding(.horizontal, 12)
             .padding(.top, 12)
             .padding(.bottom, 16)
-            
-            // Content - using Form like Landmarks
+
             Form {
-                // Image info section
                 Section {
                     imageInfoCard
                 }
-                
-                // Tab content
+
                 switch selectedTab {
                 case 0: styleSectionContent
                 case 1: canvasSectionContent
@@ -555,6 +561,21 @@ struct ScreenshotEditorView: View {
     }
     
     // MARK: - Component Builders
+    
+    private func tabButton(icon: String, tag: Int, label: String) -> some View {
+        let isSelected = selectedTab == tag
+        return Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                selectedTab = tag
+            }
+        } label: {
+            Image(systemName: icon)
+                .font(.system(size: 15))
+                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                .frame(width: 28, height: 28)
+        }
+        .help(label)
+    }
     
     private func mockupStyleButton(_ style: MockupStyle) -> some View {
         let isSelected = viewModel.config.mockupStyle == style

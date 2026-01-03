@@ -317,6 +317,46 @@ class ScreenshotEditorViewModel: ObservableObject {
         }
     }
     
+    // MARK: - Share Action
+    func shareAction() {
+        guard let img = ScreenshotRenderer(image: originalImage, config: config).render() else { return }
+        
+        // Créer un fichier temporaire pour partager
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("screenshot_\(Int(Date().timeIntervalSince1970)).png")
+        
+        // Sauvegarder l'image dans le fichier temporaire
+        guard let tiffData = img.tiffRepresentation,
+              let bitmapImage = NSBitmapImageRep(data: tiffData),
+              let pngData = bitmapImage.representation(using: .png, properties: [:]) else { return }
+        
+        do {
+            try pngData.write(to: tempURL)
+            
+            // Créer et afficher le NSSharingServicePicker
+            DispatchQueue.main.async {
+                let picker = NSSharingServicePicker(items: [tempURL])
+                
+                // Trouver la fenêtre active pour positionner le picker
+                if let window = NSApp.keyWindow,
+                   let contentView = window.contentView {
+                    // Position du bouton share dans la toolbar (en haut à droite)
+                    let rect = NSRect(x: contentView.bounds.maxX - 100, y: contentView.bounds.maxY - 50, width: 1, height: 1)
+                    picker.show(relativeTo: rect, of: contentView, preferredEdge: .minY)
+                }
+            }
+        } catch {
+            print("Error saving temp file for sharing: \(error)")
+        }
+    }
+    
+    // MARK: - Get Shareable Image
+    func getShareableImage() -> Image {
+        if let img = ScreenshotRenderer(image: originalImage, config: config).render() {
+            return Image(nsImage: img)
+        }
+        return Image(nsImage: originalImage)
+    }
+    
     // MARK: - Text Overlay Actions
     func addTextOverlay() {
         guard !newTextContent.isEmpty else { return }
