@@ -521,7 +521,7 @@ struct ScreenshotEditorView: View {
                 .scaleEffect(viewModel.config.zoom / 100)
                 .rotationEffect(.degrees(viewModel.config.rotation))
                 .position(
-                    x: geo.size.width / 2 + viewModel.offset.width + viewModel.lastOffset.width,
+                    x: geo.size.width / 2 + 150 + viewModel.offset.width + viewModel.lastOffset.width,
                     y: geo.size.height / 2 + viewModel.offset.height + viewModel.lastOffset.height
                 )
             }
