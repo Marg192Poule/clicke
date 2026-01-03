@@ -238,11 +238,13 @@ struct MeshGradientConfig: Equatable {
                 .saturation(saturation / 100)
                 .brightness((brightness - 100) / 100)
             
-            // Noise overlay
+            // Noise overlay - applied on top
             if noiseAmount > 0 {
                 GrainOverlay(intensity: noiseAmount / 100)
+                    .frame(width: size.width, height: size.height)
             }
         }
+        .frame(width: size.width, height: size.height)
     }
     
     @ViewBuilder
@@ -348,27 +350,34 @@ struct GrainOverlay: View {
     
     var body: some View {
         Canvas { context, size in
-            // Film grain effect with pre-computed pattern
-            let pixelSize: CGFloat = 4 // Increased for performance
-            let cols = min(Int(size.width / pixelSize), Self.grainPattern[0].count)
-            let rows = min(Int(size.height / pixelSize), Self.grainPattern.count)
+            // Film grain effect with tiling pattern
+            let pixelSize: CGFloat = 2 // Smaller pixels for finer grain
+            let totalCols = Int(ceil(size.width / pixelSize))
+            let totalRows = Int(ceil(size.height / pixelSize))
             
-            for row in 0..<rows {
-                for col in 0..<cols {
-                    let randomValue = Self.grainPattern[row][col]
-                    // Only draw some pixels for grain effect
-                    if randomValue < 0.5 {
-                        let alpha = randomValue * intensity * 0.25
+            for row in 0..<totalRows {
+                for col in 0..<totalCols {
+                    // Use modulo to tile the pattern across the entire image
+                    let patternRow = row % Self.grainPattern.count
+                    let patternCol = col % Self.grainPattern[0].count
+                    let randomValue = Self.grainPattern[patternRow][patternCol]
+                    
+                    // Draw grain pixels - more visible
+                    let threshold = 0.4 + (intensity * 0.3)
+                    if randomValue < threshold {
+                        let alpha = intensity * 0.6 // More visible alpha
                         let rect = CGRect(
                             x: CGFloat(col) * pixelSize,
                             y: CGFloat(row) * pixelSize,
                             width: pixelSize,
                             height: pixelSize
                         )
-                        let color = randomValue > 0.25 ? Color.white : Color.black
+                        // Alternate between white and black for better grain effect
+                        let grayValue = randomValue > 0.5 ? 1.0 : 0.0
+                        let color = Color.white.opacity(grayValue * alpha)
                         context.fill(
                             Rectangle().path(in: rect),
-                            with: .color(color.opacity(alpha))
+                            with: .color(color)
                         )
                     }
                 }
@@ -615,7 +624,7 @@ struct ScreenshotStyleConfig: Equatable {
     var screenshotOffset: CGSize = .zero // Offset to move screenshot within the canvas
     
     // Background
-    var backgroundType: BackgroundType = .color
+    var backgroundType: BackgroundType = .gradient
     var selectedMagicPreset: MagicPreset? = MagicPreset.presets[7] // Default purple gradient
     var selectedShadowScene: ShadowScene? = nil
     var selectedSolidColor: SolidColor? = nil

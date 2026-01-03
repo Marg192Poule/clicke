@@ -100,19 +100,9 @@ struct ScreenshotEditorView: View {
     // MARK: - Inspector Content (Sidebar)
     private var inspectorContent: some View {
         VStack(spacing: 0) {
-            // Tab selector at top - Xcode style
-            HStack(spacing: 0) {
-                tabButton(icon: "folder.fill", tag: 0, label: "Style")
-                tabButton(icon: "x.square.fill", tag: 1, label: "Canvas")
-                tabButton(icon: "bookmark.fill", tag: 2, label: "Export")
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .background(Color(nsColor: .quaternarySystemFill), in: RoundedRectangle(cornerRadius: 8))
-            .padding(.horizontal, 12)
-            .padding(.top, 12)
-            .padding(.bottom, 16)
-
+            // Navigation toolbar at top
+            navigationToolbar
+            
             Form {
                 Section {
                     imageInfoCard
@@ -121,7 +111,7 @@ struct ScreenshotEditorView: View {
                 switch selectedTab {
                 case 0: styleSectionContent
                 case 1: canvasSectionContent
-                case 2: exportSectionContent
+                case 2: formatsSectionContent
                 default: styleSectionContent
                 }
             }
@@ -129,6 +119,56 @@ struct ScreenshotEditorView: View {
             .scrollContentBackground(.hidden)
         }
     }
+    
+    // MARK: - Navigation Toolbar
+    private var navigationToolbar: some View {
+        HStack(spacing: 0) {
+            toolbarButton(icon: "folder", tag: 0, label: "Style")
+            
+            toolbarDivider
+            
+            toolbarButton(icon: "target", tag: 1, label: "Canvas")
+            
+            toolbarDivider
+            
+            toolbarButton(icon: "rectangle.3.group", tag: 2, label: "Formats")
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 2)
+        .frame(height: 32)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Color(nsColor: .quaternarySystemFill))
+        )
+        .padding(.horizontal, 8)
+        .padding(.top, 8)
+        .padding(.bottom, 8)
+    }
+    
+    private var toolbarDivider: some View {
+        Rectangle()
+            .fill(Color.white.opacity(0.2))
+            .frame(width: 1, height: 20)
+    }
+    
+    private func toolbarButton(icon: String, tag: Int, label: String) -> some View {
+        let isSelected = selectedTab == tag
+        return Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                selectedTab = tag
+            }
+        } label: {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .regular))
+                .symbolVariant(.none)
+                .foregroundStyle(isSelected ? .white : .white.opacity(0.7))
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(label)
+    }
+    
     
     // MARK: - Image Info Card
     private var imageInfoCard: some View {
@@ -272,6 +312,11 @@ struct ScreenshotEditorView: View {
             }
         }
         
+    }
+    
+    // MARK: - Formats Section
+    @ViewBuilder
+    private var formatsSectionContent: some View {
         // Social Presets
         if viewModel.config.selectedSocialPreset != nil {
             Section("export.size") {
@@ -311,11 +356,7 @@ struct ScreenshotEditorView: View {
                 Label("social.presets", systemImage: "rectangle.3.group")
             }
         }
-    }
-    
-    // MARK: - Export Section
-    @ViewBuilder
-    private var exportSectionContent: some View {
+        
         // Quick Actions
         Section("actions") {
             // Primary action - Copy
@@ -460,10 +501,6 @@ struct ScreenshotEditorView: View {
                     Slider(value: $viewModel.config.meshGradientConfig.blurAmount, in: 0...150)
                         .frame(width: 100)
                 }
-                LabeledContent("grain") {
-                    Slider(value: $viewModel.config.meshGradientConfig.noiseAmount, in: 0...100)
-                        .frame(width: 100)
-                }
                 LabeledContent("saturation") {
                     Slider(value: $viewModel.config.meshGradientConfig.saturation, in: 0...200)
                         .frame(width: 100)
@@ -562,20 +599,6 @@ struct ScreenshotEditorView: View {
     
     // MARK: - Component Builders
     
-    private func tabButton(icon: String, tag: Int, label: String) -> some View {
-        let isSelected = selectedTab == tag
-        return Button {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                selectedTab = tag
-            }
-        } label: {
-            Image(systemName: icon)
-                .font(.system(size: 15))
-                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
-                .frame(width: 28, height: 28)
-        }
-        .help(label)
-    }
     
     private func mockupStyleButton(_ style: MockupStyle) -> some View {
         let isSelected = viewModel.config.mockupStyle == style
