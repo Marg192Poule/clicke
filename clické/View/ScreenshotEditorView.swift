@@ -11,9 +11,7 @@ struct ScreenshotEditorView: View {
     @StateObject private var viewModel: ScreenshotEditorViewModel
     @State private var selectedTab: Int = 0
     @State private var isDraggingScreenshot: Bool = false
-    @State private var isHoveringClose = false
-    @State private var isHoveringMinimize = false
-    @State private var isHoveringZoom = false
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
     
     init(originalImage: NSImage, onCopy: @escaping (NSImage) -> Void, onClose: @escaping () -> Void) {
         self.originalImage = originalImage
@@ -23,27 +21,47 @@ struct ScreenshotEditorView: View {
     }
     
     var body: some View {
-        ZStack {
-            // Full-bleed canvas - content layer
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            // Sidebar with inspector controls
+            inspectorContent
+                .frame(width: 300)
+                .toolbar(removing: .sidebarToggle)
+        } detail: {
+            // Main canvas
             canvasView
-                .ignoresSafeArea()
-            
-            // Floating inspector panel - Liquid Glass layer
-            HStack {
-                inspectorPanel
-                    .frame(width: 300)
-                    .padding(16)
-                
-                Spacer()
-            }
+                .toolbar {
+                    ToolbarItemGroup {
+                        Button("Zoom Fit", systemImage: "arrow.up.left.and.arrow.down.right") {
+                            viewModel.calculateFitZoom()
+                        }
+                        Button("Actual Size", systemImage: "1.magnifyingglass") {
+                            viewModel.config.zoom = 100
+                        }
+                    }
+                    
+                    ToolbarItem {
+                        Button("Reset", systemImage: "arrow.counterclockwise") {
+                            viewModel.resetPosition()
+                        }
+                    }
+                    
+                    ToolbarItemGroup {
+                        Button("Save", systemImage: "square.and.arrow.down") {
+                            viewModel.saveAction()
+                        }
+                        Button("Copy", systemImage: "doc.on.doc") {
+                            if let img = viewModel.copyAction() { onCopy(img) }
+                        }
+                    }
+                }
         }
-        .ignoresSafeArea()
+        .toolbar(removing: .title)
         .preferredColorScheme(.dark)
         .onAppear {
             viewModel.loadWallpapers()
             viewModel.calculateFitZoom()
         }
-        // Toolbar action handlers
+        // Toolbar action handlers (for keyboard shortcuts)
         .onReceive(NotificationCenter.default.publisher(for: ScreenshotEditorWindow.copyNotification)) { _ in
             if let img = viewModel.copyAction() { onCopy(img) }
         }
@@ -61,65 +79,39 @@ struct ScreenshotEditorView: View {
         }
     }
     
-    // MARK: - Inspector Panel (Liquid Glass)
-    private var inspectorPanel: some View {
+    // MARK: - Inspector Content (Sidebar)
+    private var inspectorContent: some View {
         VStack(spacing: 0) {
-            // Header with window controls
-            panelHeader
-            
-            Divider()
-                .opacity(0.4)
-            
-            // Content
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 20) {
-                    // Image info card
-                    imageInfoCard
-                    
-                    // Tab content
-                    Group {
-                        switch selectedTab {
-                        case 0: styleSection
-                        case 1: canvasSection
-                        case 2: exportSection
-                        default: styleSection
-                        }
-                    }
-                    .transition(.opacity.combined(with: .move(edge: .leading)))
-                }
-                .padding(16)
-            }
-        }
-        .glassEffect(.regular, in: .rect(cornerRadius: 16))
-        .shadow(color: .black.opacity(0.25), radius: 30, y: 15)
-    }
-    
-    // MARK: - Panel Header
-    private var panelHeader: some View {
-        HStack(spacing: 10) {
-            // Traffic lights
-            HStack(spacing: 8) {
-                trafficLightButton(color: .red, hoverColor: Color(red: 1, green: 0.4, blue: 0.4), isHovering: $isHoveringClose) {
-                    onClose()
-                }
-                trafficLightButton(color: .yellow, hoverColor: Color(red: 1, green: 0.85, blue: 0.4), isHovering: $isHoveringMinimize) {}
-                trafficLightButton(color: .green, hoverColor: Color(red: 0.4, green: 0.9, blue: 0.4), isHovering: $isHoveringZoom) {}
-            }
-            
-            Spacer()
-            
-            // Tab selector - native segmented
+            // Tab selector at top
             Picker("", selection: $selectedTab.animation(.easeInOut(duration: 0.2))) {
-                Text("Style").tag(0)
-                Text("Canvas").tag(1)
-                Text("Export").tag(2)
+                Text("style").tag(0)
+                Text("canvas").tag(1)
+                Text("export").tag(2)
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .frame(width: 160)
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 16)
+            
+            // Content - using Form like Landmarks
+            Form {
+                // Image info section
+                Section {
+                    imageInfoCard
+                }
+                
+                // Tab content
+                switch selectedTab {
+                case 0: styleSectionContent
+                case 1: canvasSectionContent
+                case 2: exportSectionContent
+                default: styleSectionContent
+                }
+            }
+            .formStyle(.grouped)
+            .scrollContentBackground(.hidden)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
     }
     
     // MARK: - Image Info Card
@@ -137,7 +129,7 @@ struct ScreenshotEditorView: View {
                 )
             
             VStack(alignment: .leading, spacing: 4) {
-                Text("Screenshot")
+                Text("screenshot")
                     .font(.system(size: 13, weight: .semibold))
                 
                 Text("\(Int(viewModel.originalImage.size.width)) × \(Int(viewModel.originalImage.size.height)) px")
@@ -155,128 +147,142 @@ struct ScreenshotEditorView: View {
                 .padding(.vertical, 4)
                 .background(Color.gray.opacity(0.2), in: Capsule())
         }
-        .padding(12)
-        .background(Color.gray.opacity(0.15), in: RoundedRectangle(cornerRadius: 12))
     }
     
     // MARK: - Style Section
-    private var styleSection: some View {
-        VStack(spacing: 20) {
-            // Mockup Style
-            controlGroup("Mockup") {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 60), spacing: 8)], spacing: 8) {
-                    ForEach(MockupStyle.allCases) { style in
-                        mockupStyleButton(style)
-                    }
-                }
-                
-                if viewModel.config.showMockup && viewModel.config.mockupStyle != .defaultStyle && viewModel.config.mockupStyle != .outline {
-                    labeledSlider("Border", value: $viewModel.config.mockupBorderSize, range: 0...10, step: 0.5)
+    @ViewBuilder
+    private var styleSectionContent: some View {
+        // Mockup Style
+        Section("mockup") {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 60), spacing: 8)], spacing: 8) {
+                ForEach(MockupStyle.allCases) { style in
+                    mockupStyleButton(style)
                 }
             }
             
-            // Corner Radius
-            controlGroup("Corners") {
-                Picker("", selection: $viewModel.config.borderStyle) {
-                    ForEach(BorderStyle.allCases) { style in
-                        Text(style.displayName).tag(style)
-                    }
+            if viewModel.config.showMockup && viewModel.config.mockupStyle != .defaultStyle && viewModel.config.mockupStyle != .outline {
+                LabeledContent("border") {
+                    Slider(value: $viewModel.config.mockupBorderSize, in: 0...10, step: 0.5)
+                        .frame(width: 120)
+                    Text("\(viewModel.config.mockupBorderSize, specifier: "%.1f")")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.tertiary)
+                        .frame(width: 28)
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .onChange(of: viewModel.config.borderStyle) { _, newValue in
-                    viewModel.config.borderRadius = newValue.cornerRadius
+            }
+        }
+        
+        // Corner Radius
+        Section("corners") {
+            Picker("Style", selection: $viewModel.config.borderStyle) {
+                ForEach(BorderStyle.allCases) { style in
+                    Text(style.displayName).tag(style)
                 }
-                
-                labeledSlider("Radius", value: $viewModel.config.borderRadius, range: 0...40)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .onChange(of: viewModel.config.borderStyle) { _, newValue in
+                viewModel.config.borderRadius = newValue.cornerRadius
             }
             
-            // Transform
-            controlGroup("Transform") {
-                HStack {
-                    Text("Rotation")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                    
-                    Spacer()
-                    
-                    HStack(spacing: 4) {
-                        Button { viewModel.config.rotation -= 90 } label: {
-                            Image(systemName: "rotate.left")
-                                .font(.system(size: 12, weight: .medium))
-                                .frame(width: 28, height: 28)
-                                .background(Color.gray.opacity(0.2), in: RoundedRectangle(cornerRadius: 6))
-                        }
-                        .buttonStyle(.plain)
-                        
-                        Text("\(Int(viewModel.config.rotation))°")
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .foregroundStyle(.tertiary)
-                            .frame(width: 36)
-                        
-                        Button { viewModel.config.rotation += 90 } label: {
-                            Image(systemName: "rotate.right")
-                                .font(.system(size: 12, weight: .medium))
-                                .frame(width: 28, height: 28)
-                                .background(Color.gray.opacity(0.2), in: RoundedRectangle(cornerRadius: 6))
-                        }
-                        .buttonStyle(.plain)
+            LabeledContent("radius") {
+                Slider(value: $viewModel.config.borderRadius, in: 0...40)
+                    .frame(width: 120)
+                Text("\(Int(viewModel.config.borderRadius))")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                    .frame(width: 28)
+            }
+        }
+        
+        // Transform
+        Section("transform") {
+            LabeledContent("rotation") {
+                HStack(spacing: 4) {
+                    Button { viewModel.config.rotation -= 90 } label: {
+                        Image(systemName: "rotate.left")
                     }
+                    .buttonStyle(.bordered)
+                    
+                    Text("\(Int(viewModel.config.rotation))°")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.tertiary)
+                        .frame(width: 36)
+                    
+                    Button { viewModel.config.rotation += 90 } label: {
+                        Image(systemName: "rotate.right")
+                    }
+                    .buttonStyle(.bordered)
                 }
             }
         }
     }
     
     // MARK: - Canvas Section (Background & Layout)
-    private var canvasSection: some View {
-        VStack(spacing: 20) {
-            // Background Type
-            controlGroup("Background") {
-                // Type picker with icons
-                HStack(spacing: 2) {
-                    ForEach(BackgroundType.allCases) { type in
-                        backgroundTypeButton(type)
-                    }
+    @ViewBuilder
+    private var canvasSectionContent: some View {
+        // Background Type
+        Section("background") {
+            // Type picker with icons
+            HStack(spacing: 2) {
+                ForEach(BackgroundType.allCases) { type in
+                    backgroundTypeButton(type)
                 }
-                .padding(3)
-                .background(Color.gray.opacity(0.2), in: RoundedRectangle(cornerRadius: 10))
-                
-                // Background content
-                backgroundContent
             }
+            .padding(3)
+            .background(Color.gray.opacity(0.2), in: RoundedRectangle(cornerRadius: 10))
             
-            // Layout
-            controlGroup("Layout") {
-                labeledSlider("Padding", value: $viewModel.config.padding, range: 0...200, step: 8)
-                labeledSlider("Scale", value: $viewModel.config.imageScale, range: 10...200, step: 5, suffix: "%")
+            // Background content
+            backgroundContent
+        }
+        
+        // Layout
+        Section("layout") {
+            LabeledContent("padding") {
+                Slider(value: $viewModel.config.padding, in: 0...200, step: 8)
+                    .frame(width: 100)
+                Text("\(Int(viewModel.config.padding))")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                    .frame(width: 28)
             }
-            
-            // Social Presets (collapsed by default)
-            if viewModel.config.selectedSocialPreset != nil {
-                controlGroup("Export Size") {
-                    if let preset = viewModel.config.selectedSocialPreset {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("\(preset.platform) — \(preset.name)")
-                                    .font(.system(size: 12, weight: .medium))
-                                Text("\(preset.width) × \(preset.height)")
-                                    .font(.system(size: 10, design: .monospaced))
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Button {
-                                viewModel.config.selectedSocialPreset = nil
-                            } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundStyle(.tertiary)
-                            }
-                            .buttonStyle(.plain)
+            LabeledContent("scale") {
+                Slider(value: $viewModel.config.imageScale, in: 10...200, step: 5)
+                    .frame(width: 100)
+                Text("\(Int(viewModel.config.imageScale))%")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                    .frame(width: 36)
+            }
+        }
+        
+        // Social Presets
+        if viewModel.config.selectedSocialPreset != nil {
+            Section("export.size") {
+                if let preset = viewModel.config.selectedSocialPreset {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(preset.platform) — \(preset.name)")
+                                .font(.system(size: 12, weight: .medium))
+                            Text("\(preset.width) × \(preset.height)")
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundStyle(.secondary)
                         }
+                        Spacer()
+                        Button {
+                            viewModel.config.selectedSocialPreset = nil
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.tertiary)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }
-            
-            // Platform presets
+        }
+        
+        // Platform presets
+        Section {
             DisclosureGroup {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
                     ForEach(SocialMediaPreset.groupedByPlatform.keys.sorted(), id: \.self) { platform in
@@ -286,76 +292,43 @@ struct ScreenshotEditorView: View {
                     }
                 }
             } label: {
-                HStack {
-                    Image(systemName: "rectangle.3.group")
-                        .font(.system(size: 11))
-                    Text("Social Presets")
-                        .font(.system(size: 12, weight: .medium))
-                }
-                .foregroundStyle(.secondary)
+                Label("social.presets", systemImage: "rectangle.3.group")
             }
-            .tint(.secondary)
         }
     }
     
     // MARK: - Export Section
-    private var exportSection: some View {
-        VStack(spacing: 20) {
-            // Quick Actions
-            controlGroup("Actions") {
-                // Primary action - Copy
-                Button {
-                    if let img = viewModel.copyAction() { onCopy(img) }
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "doc.on.clipboard.fill")
-                            .font(.system(size: 14))
-                        Text("Copy to Clipboard")
-                            .font(.system(size: 13, weight: .semibold))
-                    }
-                    .foregroundStyle(.white)
+    @ViewBuilder
+    private var exportSectionContent: some View {
+        // Quick Actions
+        Section("actions") {
+            // Primary action - Copy
+            Button {
+                if let img = viewModel.copyAction() { onCopy(img) }
+            } label: {
+                Label("copy.to.clipboard", systemImage: "doc.on.clipboard.fill")
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(Color.accentColor.gradient, in: RoundedRectangle(cornerRadius: 10))
-                }
-                .buttonStyle(.plain)
-                .shadow(color: Color.accentColor.opacity(0.3), radius: 10, y: 5)
-                
-                // Secondary action - Save
-                Button {
-                    viewModel.saveAction()
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "square.and.arrow.down")
-                            .font(.system(size: 14))
-                        Text("Save to File")
-                            .font(.system(size: 13, weight: .medium))
-                    }
-                    .foregroundStyle(.primary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(Color.gray.opacity(0.2), in: RoundedRectangle(cornerRadius: 10))
-                }
-                .buttonStyle(.plain)
             }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
             
-            // Reset
-            controlGroup("Reset") {
-                Button {
-                    viewModel.resetPosition()
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "arrow.counterclockwise")
-                            .font(.system(size: 12))
-                        Text("Reset Position")
-                            .font(.system(size: 12, weight: .medium))
-                    }
-                    .foregroundStyle(.secondary)
+            // Secondary action - Save
+            Button {
+                viewModel.saveAction()
+            } label: {
+                Label("save.to.file", systemImage: "square.and.arrow.down")
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                    .background(Color.gray.opacity(0.15), in: RoundedRectangle(cornerRadius: 8))
-                }
-                .buttonStyle(.plain)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.regular)
+        }
+        
+        // Reset
+        Section {
+            Button(role: .destructive) {
+                viewModel.resetPosition()
+            } label: {
+                Label("reset.position", systemImage: "arrow.counterclockwise")
             }
         }
     }
@@ -365,15 +338,8 @@ struct ScreenshotEditorView: View {
     private var backgroundContent: some View {
         switch viewModel.config.backgroundType {
         case .transparent:
-            HStack(spacing: 8) {
-                Image(systemName: "checkerboard.rectangle")
-                    .foregroundStyle(.tertiary)
-                Text("Transparent")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 8)
+            Label("transparent", systemImage: "checkerboard.rectangle")
+                .foregroundStyle(.secondary)
             
         case .color:
             colorPickerGrid
@@ -439,7 +405,7 @@ struct ScreenshotEditorView: View {
                 }
             }
             .padding(3)
-.background(Color.gray.opacity(0.2), in: Capsule())
+            .background(Color.gray.opacity(0.2), in: Capsule())
             
             // Color pickers
             HStack(spacing: 4) {
@@ -467,24 +433,30 @@ struct ScreenshotEditorView: View {
                     }
                 } label: {
                     Image(systemName: "dice.fill")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 32, height: 32)
-                        .background(Color.gray.opacity(0.2), in: RoundedRectangle(cornerRadius: 8))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.bordered)
                 .help("Randomize")
             }
             
             // Effects
-            VStack(spacing: 6) {
-                effectSlider("Blur", icon: "drop.fill", value: $viewModel.config.meshGradientConfig.blurAmount, range: 0...150)
-                effectSlider("Grain", icon: "sparkles", value: $viewModel.config.meshGradientConfig.noiseAmount, range: 0...100)
-                effectSlider("Saturation", icon: "circle.lefthalf.filled", value: $viewModel.config.meshGradientConfig.saturation, range: 0...200)
-                effectSlider("Brightness", icon: "sun.max.fill", value: $viewModel.config.meshGradientConfig.brightness, range: 50...150)
+            VStack(spacing: 8) {
+                LabeledContent("blur") {
+                    Slider(value: $viewModel.config.meshGradientConfig.blurAmount, in: 0...150)
+                        .frame(width: 100)
+                }
+                LabeledContent("grain") {
+                    Slider(value: $viewModel.config.meshGradientConfig.noiseAmount, in: 0...100)
+                        .frame(width: 100)
+                }
+                LabeledContent("saturation") {
+                    Slider(value: $viewModel.config.meshGradientConfig.saturation, in: 0...200)
+                        .frame(width: 100)
+                }
+                LabeledContent("brightness") {
+                    Slider(value: $viewModel.config.meshGradientConfig.brightness, in: 50...150)
+                        .frame(width: 100)
+                }
             }
-            .padding(10)
-            .background(Color.gray.opacity(0.15), in: RoundedRectangle(cornerRadius: 10))
             
             // Presets
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 48), spacing: 6)], spacing: 6) {
@@ -501,30 +473,22 @@ struct ScreenshotEditorView: View {
             Button {
                 viewModel.importCustomImage()
             } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.system(size: 12))
-                    Text("Import Image")
-                        .font(.system(size: 12, weight: .medium))
-                }
-                .foregroundStyle(Color.accentColor)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
-                .background(Color.accentColor.opacity(0.15), in: RoundedRectangle(cornerRadius: 8))
+                Label("import.image", systemImage: "plus.circle.fill")
+                    .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.bordered)
             
             if viewModel.wallpaperImages.isEmpty {
                 HStack {
                     ProgressView()
                         .scaleEffect(0.7)
-                    Text("Loading wallpapers…")
+                    Text("loading.wallpapers")
                         .font(.system(size: 11))
                         .foregroundStyle(.tertiary)
                 }
                 .frame(maxWidth: .infinity, minHeight: 50)
             } else {
-                Text("\(viewModel.wallpaperImages.count) wallpapers")
+                Text("wallpapers.count \(viewModel.wallpaperImages.count)")
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
                 
@@ -541,9 +505,9 @@ struct ScreenshotEditorView: View {
     private var canvasView: some View {
         GeometryReader { geo in
             ZStack {
-                // Background with subtle material
-                Color.black.opacity(0.7)
-                Rectangle().fill(.ultraThinMaterial.opacity(0.3))
+                // Liquid Glass background - rectangle shape
+                Color.clear
+                    .glassEffect(.regular, in: .rect)
                 
                 // Screenshot canvas
                 ScreenshotPreviewCanvas(
@@ -557,7 +521,7 @@ struct ScreenshotEditorView: View {
                 .scaleEffect(viewModel.config.zoom / 100)
                 .rotationEffect(.degrees(viewModel.config.rotation))
                 .position(
-                    x: 316 + (geo.size.width - 316) / 2 + viewModel.offset.width + viewModel.lastOffset.width,
+                    x: geo.size.width / 2 + viewModel.offset.width + viewModel.lastOffset.width,
                     y: geo.size.height / 2 + viewModel.offset.height + viewModel.lastOffset.height
                 )
             }
@@ -577,86 +541,10 @@ struct ScreenshotEditorView: View {
                 viewModel.lastOffset = oldLastOffset
             }
         }
+        .ignoresSafeArea()
     }
     
     // MARK: - Component Builders
-    
-    private func controlGroup<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title.uppercased())
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
-                .foregroundStyle(.tertiary)
-                .tracking(0.5)
-            
-            content()
-        }
-    }
-    
-    private func labeledSlider(_ label: String, value: Binding<Double>, range: ClosedRange<Double>, step: Double = 1, suffix: String = "") -> some View {
-        HStack(spacing: 10) {
-            Text(label)
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .frame(width: 60, alignment: .leading)
-            
-            Slider(value: value, in: range, step: step)
-                .tint(Color.accentColor)
-            
-            Text("\(Int(value.wrappedValue))\(suffix)")
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
-                .foregroundStyle(.tertiary)
-                .frame(width: 40, alignment: .trailing)
-        }
-    }
-    
-    private func labeledSlider(_ label: String, value: Binding<CGFloat>, range: ClosedRange<CGFloat>, step: CGFloat = 1, suffix: String = "") -> some View {
-        HStack(spacing: 10) {
-            Text(label)
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .frame(width: 60, alignment: .leading)
-            
-            Slider(value: value, in: range, step: step)
-                .tint(Color.accentColor)
-            
-            Text("\(Int(value.wrappedValue))\(suffix)")
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
-                .foregroundStyle(.tertiary)
-                .frame(width: 40, alignment: .trailing)
-        }
-    }
-    
-    private func effectSlider(_ label: String, icon: String, value: Binding<Double>, range: ClosedRange<Double>) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.tertiary)
-                .frame(width: 14)
-            
-            Text(label)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .frame(width: 60, alignment: .leading)
-            
-            Slider(value: value, in: range)
-                .tint(Color.accentColor)
-            
-            Text("\(Int(value.wrappedValue))")
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
-                .foregroundStyle(.tertiary)
-                .frame(width: 28, alignment: .trailing)
-        }
-    }
-    
-    private func trafficLightButton(color: Color, hoverColor: Color, isHovering: Binding<Bool>, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Circle()
-                .fill(isHovering.wrappedValue ? hoverColor : color.opacity(0.8))
-                .frame(width: 12, height: 12)
-        }
-        .buttonStyle(.plain)
-        .onHover { isHovering.wrappedValue = $0 }
-    }
     
     private func mockupStyleButton(_ style: MockupStyle) -> some View {
         let isSelected = viewModel.config.mockupStyle == style

@@ -25,9 +25,25 @@ class ScreenshotEditorWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
     static let resetNotification = Notification.Name("ScreenshotEditorToolbarReset")
     static let zoomFitNotification = Notification.Name("ScreenshotEditorToolbarZoomFit")
     static let zoomActualNotification = Notification.Name("ScreenshotEditorToolbarZoomActual")
+    static let miniaturizeNotification = Notification.Name("ScreenshotEditorMiniaturize")
+    static let zoomWindowNotification = Notification.Name("ScreenshotEditorZoomWindow")
     
     private override init() {
         super.init()
+        setupNotificationObservers()
+    }
+    
+    private func setupNotificationObservers() {
+        NotificationCenter.default.addObserver(self, selector: #selector(handleMiniaturize), name: Self.miniaturizeNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleZoomWindow), name: Self.zoomWindowNotification, object: nil)
+    }
+    
+    @objc private func handleMiniaturize() {
+        editorWindow?.miniaturize(nil)
+    }
+    
+    @objc private func handleZoomWindow() {
+        editorWindow?.zoom(nil)
     }
     
     func show(with image: NSImage) {
@@ -55,26 +71,23 @@ class ScreenshotEditorWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: windowWidth, height: windowHeight),
-            styleMask: [.titled, .closable, .resizable, .fullSizeContentView, .unifiedTitleAndToolbar],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView, .unifiedTitleAndToolbar],
             backing: .buffered,
             defer: false
         )
         
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
-        window.backgroundColor = NSColor(red: 0.1, green: 0.1, blue: 0.1, alpha: 1)
-        window.isMovableByWindowBackground = false // Disable window drag from content
+        window.backgroundColor = .clear
+        window.isMovableByWindowBackground = false
         window.minSize = NSSize(width: 800, height: 600)
         window.center()
         window.delegate = self
         
-        // Setup toolbar
-        setupToolbar(for: window)
+        // Remove toolbar separator for seamless look
+        window.titlebarSeparatorStyle = .none
         
-        // Hide the standard window buttons (traffic lights) - we have our own
-        window.standardWindowButton(.closeButton)?.isHidden = true
-        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
-        window.standardWindowButton(.zoomButton)?.isHidden = true
+        // No custom toolbar - SwiftUI NavigationSplitView handles it
         
         editorWindow = window
         

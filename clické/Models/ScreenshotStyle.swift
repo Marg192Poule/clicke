@@ -327,23 +327,38 @@ struct MeshGradientConfig: Equatable {
     }
 }
 
-// MARK: - Grain/Noise Overlay
+// MARK: - Grain/Noise Overlay (Optimized with static pattern)
 struct GrainOverlay: View {
     let intensity: Double // 0 to 1
     
+    // Use a static seed for consistent grain pattern
+    private static let grainPattern: [[Double]] = {
+        var pattern: [[Double]] = []
+        let rows = 200 // Fixed pattern size
+        let cols = 300
+        for _ in 0..<rows {
+            var row: [Double] = []
+            for _ in 0..<cols {
+                row.append(Double.random(in: 0...1))
+            }
+            pattern.append(row)
+        }
+        return pattern
+    }()
+    
     var body: some View {
         Canvas { context, size in
-            // Film grain effect with varying density
-            let pixelSize: CGFloat = 2
-            let cols = Int(size.width / pixelSize)
-            let rows = Int(size.height / pixelSize)
+            // Film grain effect with pre-computed pattern
+            let pixelSize: CGFloat = 4 // Increased for performance
+            let cols = min(Int(size.width / pixelSize), Self.grainPattern[0].count)
+            let rows = min(Int(size.height / pixelSize), Self.grainPattern.count)
             
             for row in 0..<rows {
                 for col in 0..<cols {
-                    let randomValue = Double.random(in: 0...1)
+                    let randomValue = Self.grainPattern[row][col]
                     // Only draw some pixels for grain effect
                     if randomValue < 0.5 {
-                        let alpha = randomValue * intensity * 0.3
+                        let alpha = randomValue * intensity * 0.25
                         let rect = CGRect(
                             x: CGFloat(col) * pixelSize,
                             y: CGFloat(row) * pixelSize,
@@ -361,6 +376,7 @@ struct GrainOverlay: View {
         }
         .allowsHitTesting(false)
         .blendMode(.overlay)
+        .drawingGroup() // Use Metal rendering for better performance
     }
 }
 

@@ -4,19 +4,19 @@ struct AboutSectionView: View {
     var body: some View {
         Section {
             HStack {
-                Label("Version", systemImage: "info.circle")
+                Label("version", systemImage: "info.circle")
                 Spacer()
                 Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0")
             }
             
             HStack {
-                Label("BetterShot", systemImage: "camera.viewfinder")
+                Label("app", systemImage: "camera.viewfinder")
                 Spacer()
-                Text("BetterShot")
+                Text("Clické")
                     .foregroundColor(.secondary)
             }
         } header: {
-            Text("About")
+            Text("about")
         }
     }
 }

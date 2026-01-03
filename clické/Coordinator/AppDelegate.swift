@@ -29,8 +29,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         
         // Appliquer le paramètre initial
         updateDockIconVisibility()
-        
-        NSApp.setActivationPolicy(.accessory)
     }
     
     private func setupHotkeys() {
@@ -55,7 +53,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             let config = NSImage.SymbolConfiguration(pointSize: 17, weight: .regular)
             let image = NSImage(
                 systemSymbolName: "c.square.fill", 
-                accessibilityDescription: "Screenshot"
+                accessibilityDescription: "Clické"
             )?.withSymbolConfiguration(config)
             image?.isTemplate = true
             button.image = image
@@ -64,28 +62,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let menu = NSMenu()
         menu.addItem(
             NSMenuItem(
-                title: "Screenshot",
+                title: String(localized: "screenshot"),
                 action: #selector(screenshotCapture),
                 keyEquivalent: ""
             )
         )
         menu.addItem(
             NSMenuItem(
-                title: "Capture Window",
+                title: String(localized: "capture.window"),
                 action: #selector(tabCapture),
                 keyEquivalent: ""
             )
         )
         menu.addItem(
             NSMenuItem(
-                title: "Preferences",
+                title: String(localized: "preferences"),
                 action: #selector(openSettings),
                 keyEquivalent: ","
             )
         )
         menu.addItem(
             NSMenuItem(
-                title: "Quit",
+                title: String(localized: "quit"),
                 action: #selector(quitApp),
                 keyEquivalent: "q"
             )
@@ -115,14 +113,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 )?.first as? NSImage {
                     // Afficher le toast interactif avec option Edit
                     toastManager.showWithEditOption(
-                        message: "Copied",
+                        message: String(localized: "copied"),
                         icon: "doc.on.clipboard.fill",
                         screenshotImage: image
                     )
                 } else {
                     // Fallback au toast simple
                     toastManager.show(
-                        message: "Copied",
+                        message: String(localized: "copied"),
                         icon: "doc.on.clipboard.fill",
                         success: true
                     )
@@ -130,7 +128,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
         } catch {
             toastManager.show(
-                message: "Error",
+                message: String(localized: "error"),
                 icon: "xmark.circle.fill",
                 success: false
             )
@@ -158,14 +156,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 )?.first as? NSImage {
                     // Afficher le toast interactif avec option Edit
                     toastManager.showWithEditOption(
-                        message: "Window captured",
+                        message: String(localized: "window.captured"),
                         icon: "macwindow",
                         screenshotImage: image
                     )
                 } else {
                     // Fallback au toast simple
                     toastManager.show(
-                        message: "Window captured",
+                        message: String(localized: "window.captured"),
                         icon: "macwindow",
                         success: true
                     )
@@ -173,7 +171,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
         } catch {
             toastManager.show(
-                message: "Error",
+                message: String(localized: "error"),
                 icon: "xmark.circle.fill",
                 success: false
             )

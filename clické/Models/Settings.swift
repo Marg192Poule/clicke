@@ -18,7 +18,7 @@ struct Settings: Codable, Equatable {
     static let `default` = Settings(
         hotkey: .default,
         tabCaptureHotkey: HotkeyConfiguration(keyCode: 17, modifiers: [.option, .shift]), // Option+Shift+T
-        showDockIcon: false,
+        showDockIcon: true,  // Temporairement true pour tester l'icône
         copyToClipboard: true,
         soundEffectsEnabled: true,
         soundEffectsVolume: 0.5,

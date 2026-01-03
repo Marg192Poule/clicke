@@ -7,16 +7,13 @@ struct AppearanceSectionView: View {
         Section {
             Label {
                 VStack(alignment: .leading, spacing: 2) {
-                    Toggle("Show Dock Icon", isOn: $showDockIcon)
-                    Text("Show app icon in dock")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    Toggle("show.dock.icon", isOn: $showDockIcon)
                 }
             } icon: {
                 Image(systemName: "dock.rectangle")
             }
         } header: {
-            Text("Apparence")
+            Text("general")
         }
     }
 }
@@ -28,16 +25,13 @@ struct GeneralSectionView: View {
         Section {
             Label {
                 VStack(alignment: .leading, spacing: 2) {
-                    Toggle("Copy to Clipboard", isOn: $copyToClipboard)
-                    Text("Automatically copy the screenshot to the clipboard after capture")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    Toggle("copy.to.clipboard", isOn: $copyToClipboard)
                 }
             } icon: {
                 Image(systemName: "doc.on.clipboard")
             }
         } header: {
-            Text("General")
+            Text("general")
         }
     }
 }

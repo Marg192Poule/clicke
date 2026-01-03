@@ -551,22 +551,35 @@ struct CheckerboardView: View {
     }
 }
 
-// MARK: - Noise View
+// MARK: - Noise View (Optimized with static pattern)
 struct NoiseView: View {
     let intensity: Double // 0 to 1
     
+    // Use a static seed for consistent noise pattern
+    private static let noisePattern: [[Double]] = {
+        var pattern: [[Double]] = []
+        let rows = 150 // Fixed pattern size
+        let cols = 200
+        for _ in 0..<rows {
+            var row: [Double] = []
+            for _ in 0..<cols {
+                row.append(Double.random(in: 0...1))
+            }
+            pattern.append(row)
+        }
+        return pattern
+    }()
+    
     var body: some View {
         Canvas { context, size in
-            // Optimized noise pattern - less iterations
-            let pixelSize: CGFloat = 4 // Increased from 2 to reduce iterations
-            let cols = Int(size.width / pixelSize)
-            let rows = Int(size.height / pixelSize)
+            let pixelSize: CGFloat = 6 // Larger pixels = better performance
+            let cols = min(Int(size.width / pixelSize), Self.noisePattern[0].count)
+            let rows = min(Int(size.height / pixelSize), Self.noisePattern.count)
             
-            // Pre-calculate random values for better performance
             for row in 0..<rows {
                 for col in 0..<cols {
-                    let randomValue = Double.random(in: 0...1)
-                    let alpha = randomValue * intensity * 0.2 // Reduced opacity multiplier
+                    let randomValue = Self.noisePattern[row][col]
+                    let alpha = randomValue * intensity * 0.15
                     
                     let rect = CGRect(
                         x: CGFloat(col) * pixelSize,
@@ -584,6 +597,7 @@ struct NoiseView: View {
             }
         }
         .allowsHitTesting(false)
+        .drawingGroup() // Use Metal rendering for better performance
     }
 }
 

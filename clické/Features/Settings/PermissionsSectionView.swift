@@ -12,7 +12,7 @@ struct PermissionsSectionView: View {
         Section {
             HStack(spacing: 12) {
                 permissionCard(
-                    title: "Accessibility",
+                    title: String(localized: "accessibility"),
                     icon: "accessibility",
                     status: hasAccessibility,
                     action: {
@@ -24,7 +24,7 @@ struct PermissionsSectionView: View {
             if !hasAccessibility {
                 VStack(alignment: .leading, spacing: 6) {
                     Label {
-                        Text("Accessibility is required for BetterShot to listen to your keyboard shortcut.")
+                        Text("accessibility.description")
                             .font(.callout)
                             .foregroundStyle(.primary)
                     } icon: {
@@ -35,7 +35,7 @@ struct PermissionsSectionView: View {
                     Button {
                         openAccessibilitySettings()
                     } label: {
-                        Text("Open Accessibility Settings")
+                        Text("open.accessibility.settings")
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
@@ -45,7 +45,7 @@ struct PermissionsSectionView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 10))
             }
         } header: {
-            Text("Permissions")
+            Text("permissions")
         }
         .onAppear {
             hasAccessibility = checkAccessibilityPermissions()
@@ -97,8 +97,10 @@ struct PermissionsSectionView: View {
                     .foregroundStyle(.green)
                     .font(.body)
             } else {
-                Button("Autoriser") {
+                Button {
                     action()
+                } label: {
+                    Text("allow")
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
