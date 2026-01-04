@@ -7,6 +7,7 @@ struct ScreenshotPreviewCanvas: View {
     let config: ScreenshotStyleConfig
     @Binding var isDragging: Bool
     var onScreenshotOffsetChanged: ((CGSize) -> Void)? = nil
+    var isRendering: Bool = false // True when rendering for export, false for preview
     
     private let canvasCornerRadius: CGFloat = 24
     @State private var dragOffset: CGSize = .zero
@@ -216,7 +217,13 @@ struct ScreenshotPreviewCanvas: View {
         Group {
             switch config.backgroundType {
             case .transparent:
-                CheckerboardView()
+                if isRendering {
+                    // Use transparent background when rendering for export
+                    Color.clear
+                } else {
+                    // Use checkerboard for preview
+                    CheckerboardView()
+                }
                 
             case .color:
                 colorBackground
@@ -237,17 +244,21 @@ struct ScreenshotPreviewCanvas: View {
     
     @ViewBuilder
     private var colorBackground: some View {
-        if let magic = config.selectedMagicPreset {
-            magicGradient(magic)
-        } else if let scene = config.selectedShadowScene {
-            sceneBackground(scene)
-        } else if let solid = config.selectedSolidColor {
-            solid.color
-        } else if let gradient = config.selectedGradient {
-            LinearGradient(colors: gradient.colors, startPoint: .leading, endPoint: .trailing)
-        } else {
-            config.customColor
+        Group {
+            if let magic = config.selectedMagicPreset {
+                magicGradient(magic)
+            } else if let scene = config.selectedShadowScene {
+                sceneBackground(scene)
+            } else if let solid = config.selectedSolidColor {
+                solid.color
+            } else if let gradient = config.selectedGradient {
+                LinearGradient(colors: gradient.colors, startPoint: .leading, endPoint: .trailing)
+            } else {
+                config.customColor
+            }
         }
+        .saturation(config.meshGradientConfig.saturation / 100)
+        .brightness((config.meshGradientConfig.brightness - 100) / 100)
     }
     
     @ViewBuilder
@@ -269,6 +280,8 @@ struct ScreenshotPreviewCanvas: View {
                 colorBackground
             }
         }
+        .saturation(config.meshGradientConfig.saturation / 100)
+        .brightness((config.meshGradientConfig.brightness - 100) / 100)
         .onChange(of: config.backgroundImageURL) { _, newURL in
             // Reset and load new image asynchronously
             loadedBackgroundImage = nil

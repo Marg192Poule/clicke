@@ -15,8 +15,8 @@ class ScreenshotRenderer {
         var exportConfig = config
         exportConfig.zoom = 100
         
-        // Create the preview canvas view
-        let view = ScreenshotPreviewCanvas(image: image, config: exportConfig, isDragging: .init(get: { false }, set: { _ in }))
+        // Create the preview canvas view with isRendering=true for transparent background
+        let view = ScreenshotPreviewCanvas(image: image, config: exportConfig, isDragging: .init(get: { false }, set: { _ in }), isRendering: true)
             .rotationEffect(.degrees(config.rotation))
         
         // Calculate size

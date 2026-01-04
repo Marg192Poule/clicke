@@ -104,10 +104,6 @@ struct ScreenshotEditorView: View {
             navigationToolbar
             
             Form {
-                Section {
-                    imageInfoCard
-                }
-
                 switch selectedTab {
                 case 0: styleSectionContent
                 case 1: canvasSectionContent
@@ -149,6 +145,7 @@ struct ScreenshotEditorView: View {
         Rectangle()
             .fill(Color.white.opacity(0.2))
             .frame(width: 1, height: 20)
+            .padding(.horizontal, 4)
     }
     
     private func toolbarButton(icon: String, tag: Int, label: String) -> some View {
@@ -158,52 +155,24 @@ struct ScreenshotEditorView: View {
                 selectedTab = tag
             }
         } label: {
-            Image(systemName: icon)
-                .font(.system(size: 12, weight: .regular))
-                .symbolVariant(.none)
-                .foregroundStyle(isSelected ? .white : .white.opacity(0.7))
-                .frame(width: 24, height: 24)
-                .contentShape(Rectangle())
+            ZStack {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.accentColor.opacity(0.3))
+                        .frame(width: 24, height: 24)
+                }
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
+                    .symbolVariant(.none)
+                    .foregroundStyle(isSelected ? .white : .white.opacity(0.7))
+            }
+            .frame(width: 24, height: 24)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help(label)
     }
     
-    
-    // MARK: - Image Info Card
-    private var imageInfoCard: some View {
-        HStack(spacing: 12) {
-            // Thumbnail
-            Image(nsImage: viewModel.originalImage)
-                .resizable()
-                .scaledToFill()
-                .frame(width: 48, height: 48)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .strokeBorder(.white.opacity(0.1), lineWidth: 0.5)
-                )
-            
-            VStack(alignment: .leading, spacing: 4) {
-                Text("screenshot")
-                    .font(.system(size: 13, weight: .semibold))
-                
-                Text("\(Int(viewModel.originalImage.size.width)) × \(Int(viewModel.originalImage.size.height)) px")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.secondary)
-            }
-            
-            Spacer()
-            
-            // Zoom indicator
-            Text("\(Int(viewModel.config.zoom))%")
-                .font(.system(size: 11, weight: .medium, design: .rounded))
-                .foregroundStyle(.tertiary)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Color.gray.opacity(0.2), in: Capsule())
-        }
-    }
     
     // MARK: - Style Section
     @ViewBuilder
@@ -312,6 +281,23 @@ struct ScreenshotEditorView: View {
             }
         }
         
+        // Effects - available for all backgrounds except transparent
+        if viewModel.config.backgroundType != .transparent {
+            Section("effects") {
+                LabeledContent("blur") {
+                    Slider(value: $viewModel.config.backgroundBlur, in: 0...100)
+                        .frame(width: 100)
+                }
+                LabeledContent("saturation") {
+                    Slider(value: $viewModel.config.meshGradientConfig.saturation, in: 0...200)
+                        .frame(width: 100)
+                }
+                LabeledContent("brightness") {
+                    Slider(value: $viewModel.config.meshGradientConfig.brightness, in: 50...150)
+                        .frame(width: 100)
+                }
+            }
+        }
     }
     
     // MARK: - Formats Section
@@ -495,21 +481,6 @@ struct ScreenshotEditorView: View {
                 .help("Randomize")
             }
             
-            // Effects
-            VStack(spacing: 8) {
-                LabeledContent("blur") {
-                    Slider(value: $viewModel.config.meshGradientConfig.blurAmount, in: 0...150)
-                        .frame(width: 100)
-                }
-                LabeledContent("saturation") {
-                    Slider(value: $viewModel.config.meshGradientConfig.saturation, in: 0...200)
-                        .frame(width: 100)
-                }
-                LabeledContent("brightness") {
-                    Slider(value: $viewModel.config.meshGradientConfig.brightness, in: 50...150)
-                        .frame(width: 100)
-                }
-            }
             
             // Presets
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 48), spacing: 6)], spacing: 6) {
