@@ -222,7 +222,7 @@ struct MeshGradientConfig: Equatable {
     var color4: Color = Color(hex: "764ba2")  // Mid tone
     
     // Effects
-    var blurAmount: Double = 60              // Blur for softer transitions (0-150)
+    var blurAmount: Double = 0               // Blur for softer transitions (0-150)
     var noiseAmount: Double = 0              // Grain/noise overlay (0-100)
     var saturation: Double = 100             // Color saturation (0-200)
     var brightness: Double = 100             // Brightness adjustment (50-150)
@@ -232,19 +232,12 @@ struct MeshGradientConfig: Equatable {
     // Create gradient view based on style with effects
     @ViewBuilder
     func gradientView(size: CGSize) -> some View {
-        ZStack {
-            gradientBase(size: size)
-                .blur(radius: blurAmount * 0.5)
-                .saturation(saturation / 100)
-                .brightness((brightness - 100) / 100)
-            
-            // Noise overlay - applied on top
-            if noiseAmount > 0 {
-                GrainOverlay(intensity: noiseAmount / 100)
-                    .frame(width: size.width, height: size.height)
-            }
-        }
-        .frame(width: size.width, height: size.height)
+        gradientBase(size: size)
+            .saturation(saturation / 100)
+            .brightness((brightness - 100) / 100)
+            .blur(radius: blurAmount) // Blur the gradient
+            .noiseOverlay(intensity: noiseAmount / 100) // Noise overlay on top (stays sharp)
+            .frame(width: size.width, height: size.height)
     }
     
     @ViewBuilder
@@ -329,63 +322,21 @@ struct MeshGradientConfig: Equatable {
     }
 }
 
-// MARK: - Grain/Noise Overlay (Optimized with static pattern)
+// MARK: - Grain/Noise Overlay (Using Metal Shader for overlay effect)
 struct GrainOverlay: View {
     let intensity: Double // 0 to 1
     
-    // Use a static seed for consistent grain pattern
-    private static let grainPattern: [[Double]] = {
-        var pattern: [[Double]] = []
-        let rows = 200 // Fixed pattern size
-        let cols = 300
-        for _ in 0..<rows {
-            var row: [Double] = []
-            for _ in 0..<cols {
-                row.append(Double.random(in: 0...1))
-            }
-            pattern.append(row)
-        }
-        return pattern
-    }()
-    
     var body: some View {
-        Canvas { context, size in
-            // Film grain effect with tiling pattern
-            let pixelSize: CGFloat = 2 // Smaller pixels for finer grain
-            let totalCols = Int(ceil(size.width / pixelSize))
-            let totalRows = Int(ceil(size.height / pixelSize))
-            
-            for row in 0..<totalRows {
-                for col in 0..<totalCols {
-                    // Use modulo to tile the pattern across the entire image
-                    let patternRow = row % Self.grainPattern.count
-                    let patternCol = col % Self.grainPattern[0].count
-                    let randomValue = Self.grainPattern[patternRow][patternCol]
-                    
-                    // Draw grain pixels - more visible
-                    let threshold = 0.4 + (intensity * 0.3)
-                    if randomValue < threshold {
-                        let alpha = intensity * 0.6 // More visible alpha
-                        let rect = CGRect(
-                            x: CGFloat(col) * pixelSize,
-                            y: CGFloat(row) * pixelSize,
-                            width: pixelSize,
-                            height: pixelSize
-                        )
-                        // Alternate between white and black for better grain effect
-                        let grayValue = randomValue > 0.5 ? 1.0 : 0.0
-                        let color = Color.white.opacity(grayValue * alpha)
-                        context.fill(
-                            Rectangle().path(in: rect),
-                            with: .color(color)
-                        )
-                    }
-                }
-            }
-        }
-        .allowsHitTesting(false)
-        .blendMode(.overlay)
-        .drawingGroup() // Use Metal rendering for better performance
+        Rectangle()
+            .fill(.white)
+            .colorEffect(
+                ShaderLibrary.noise(
+                    .float(intensity)
+                )
+            )
+            .allowsHitTesting(false)
+            .blendMode(.overlay)
+            .opacity(intensity * 0.5) // Reduce overall opacity for subtlety
     }
 }
 
@@ -623,8 +574,13 @@ struct ScreenshotStyleConfig: Equatable {
     var imageScale: CGFloat = 100 // Scale of the screenshot itself (100 = 100%)
     var screenshotOffset: CGSize = .zero // Offset to move screenshot within the canvas
     
+    // 3D Transform
+    var rotationX: Double = 0 // Rotation autour de l'axe X en degrés
+    var rotationY: Double = 0 // Rotation autour de l'axe Y en degrés
+    var perspective: Double = 0 // Perspective (0-1000, plus élevé = plus de perspective)
+    
     // Background
-    var backgroundType: BackgroundType = .gradient
+    var backgroundType: BackgroundType = .image
     var selectedMagicPreset: MagicPreset? = MagicPreset.presets[7] // Default purple gradient
     var selectedShadowScene: ShadowScene? = nil
     var selectedSolidColor: SolidColor? = nil
@@ -633,7 +589,7 @@ struct ScreenshotStyleConfig: Equatable {
     var customColor: Color = .white
     
     // Mesh Gradient
-    var meshGradientConfig: MeshGradientConfig = .default
+    var meshGradientConfig: MeshGradientConfig = MeshGradientPreset.presets.first?.config ?? .default
     var selectedMeshPreset: MeshGradientPreset? = MeshGradientPreset.presets.first
     
     // Background Effects
@@ -659,7 +615,7 @@ struct ScreenshotStyleConfig: Equatable {
     var padding: CGFloat = 80
     var zoom: CGFloat = 100
     
-    // Export
+    // Export Scale (moved to transform section in UI)
     var scale: CGFloat = 1.0
     
     static let `default` = ScreenshotStyleConfig()

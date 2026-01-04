@@ -17,7 +17,18 @@ class ScreenshotRenderer {
         
         // Create the preview canvas view with isRendering=true for transparent background
         let view = ScreenshotPreviewCanvas(image: image, config: exportConfig, isDragging: .init(get: { false }, set: { _ in }), isRendering: true)
+            .scaleEffect(config.scale)
             .rotationEffect(.degrees(config.rotation))
+            .rotation3DEffect(
+                .degrees(config.rotationX),
+                axis: (x: 1, y: 0, z: 0),
+                perspective: (config.rotationX != 0 || config.rotationY != 0) ? 1.0 : 0
+            )
+            .rotation3DEffect(
+                .degrees(config.rotationY),
+                axis: (x: 0, y: 1, z: 0),
+                perspective: (config.rotationX != 0 || config.rotationY != 0) ? 1.0 : 0
+            )
         
         // Calculate size
         let mockupPadding = mockupExtraPadding()

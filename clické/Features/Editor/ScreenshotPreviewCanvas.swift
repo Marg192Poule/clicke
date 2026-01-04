@@ -15,15 +15,14 @@ struct ScreenshotPreviewCanvas: View {
     
     var body: some View {
         ZStack {
-            // Background with effects
-            backgroundView
-                .overlay {
-                    // Noise overlay (applied first)
-                    if config.backgroundNoise > 0 {
-                        NoiseView(intensity: config.backgroundNoise / 100)
-                    }
-                }
-                .blur(radius: config.backgroundBlur / 5) // Blur applied on top of noise
+            // Background with unified blur and noise overlay (except transparent)
+            if config.backgroundType == .transparent {
+                backgroundView
+            } else {
+                backgroundView
+                    .blur(radius: config.meshGradientConfig.blurAmount) // Unified blur for all backgrounds
+                    .noiseOverlay(intensity: config.meshGradientConfig.noiseAmount / 100) // Unified noise overlay
+            }
             
             // Shadow scene underlay
             if config.shadowSceneMode == .underlay && config.selectedShadowScene != nil {
@@ -42,6 +41,18 @@ struct ScreenshotPreviewCanvas: View {
                         .scaleEffect(config.imageScale / 100)
                 }
             }
+            .scaleEffect(config.scale)
+            .rotationEffect(.degrees(config.rotation))
+            .rotation3DEffect(
+                .degrees(config.rotationX),
+                axis: (x: 1, y: 0, z: 0),
+                perspective: (config.rotationX != 0 || config.rotationY != 0) ? 1.0 : 0
+            )
+            .rotation3DEffect(
+                .degrees(config.rotationY),
+                axis: (x: 0, y: 1, z: 0),
+                perspective: (config.rotationX != 0 || config.rotationY != 0) ? 1.0 : 0
+            )
             .offset(CGSize(width: config.screenshotOffset.width + dragOffset.width, height: config.screenshotOffset.height + dragOffset.height))
             .contentShape(Rectangle())
             .highPriorityGesture(

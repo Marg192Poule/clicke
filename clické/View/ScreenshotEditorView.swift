@@ -40,19 +40,31 @@ struct ScreenshotEditorView: View {
                         }
                     }
                     
-                    ToolbarItemGroup {
-                        Button("Zoom Fit", systemImage: "arrow.up.left.and.arrow.down.right") {
-                            viewModel.calculateFitZoom()
+                    ToolbarItem(placement: .automatic) {
+                        Button {
+                            viewModel.zoomIn()
+                        } label: {
+                            Image(systemName: "plus.magnifyingglass")
                         }
-                        Button("Actual Size", systemImage: "1.magnifyingglass") {
-                            viewModel.config.zoom = 100
-                        }
+                        .help("Zoom In")
                     }
                     
-                    ToolbarItem {
-                        Button("Reset", systemImage: "arrow.counterclockwise") {
-                            viewModel.resetPosition()
+                    ToolbarItem(placement: .automatic) {
+                        Button {
+                            viewModel.zoomOut()
+                        } label: {
+                            Image(systemName: "minus.magnifyingglass")
                         }
+                        .help("Zoom Out")
+                    }
+                    
+                    ToolbarItem(placement: .automatic) {
+                        Button {
+                            viewModel.resetPosition()
+                        } label: {
+                            Image(systemName: "arrow.counterclockwise")
+                        }
+                        .help("Reset Disposition")
                     }
                     
                     ToolbarItem(placement: .automatic) {
@@ -105,29 +117,34 @@ struct ScreenshotEditorView: View {
             
             Form {
                 switch selectedTab {
-                case 0: styleSectionContent
-                case 1: canvasSectionContent
-                case 2: formatsSectionContent
-                default: styleSectionContent
+                case 0: 
+                    appearanceSectionContent
+                case 1: 
+                    backgroundSectionContent
+                case 2: 
+                    layoutSectionContent
+                default: 
+                    appearanceSectionContent
                 }
             }
             .formStyle(.grouped)
             .scrollContentBackground(.hidden)
+            .padding(.top, -1)
         }
     }
     
     // MARK: - Navigation Toolbar
     private var navigationToolbar: some View {
         HStack(spacing: 0) {
-            toolbarButton(icon: "folder", tag: 0, label: "Style")
+            toolbarButton(icon: "paintbrush", tag: 0, label: "Appearance")
             
             toolbarDivider
             
-            toolbarButton(icon: "target", tag: 1, label: "Canvas")
+            toolbarButton(icon: "photo", tag: 1, label: "Background")
             
             toolbarDivider
             
-            toolbarButton(icon: "rectangle.3.group", tag: 2, label: "Formats")
+            toolbarButton(icon: "square.on.square", tag: 2, label: "Layout")
         }
         .padding(.horizontal, 4)
         .padding(.vertical, 2)
@@ -174,9 +191,9 @@ struct ScreenshotEditorView: View {
     }
     
     
-    // MARK: - Style Section
+    // MARK: - Appearance Section (Tab 0)
     @ViewBuilder
-    private var styleSectionContent: some View {
+    private var appearanceSectionContent: some View {
         // Mockup Style
         Section("mockup") {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 60), spacing: 8)], spacing: 8) {
@@ -187,12 +204,14 @@ struct ScreenshotEditorView: View {
             
             if viewModel.config.showMockup && viewModel.config.mockupStyle != .defaultStyle && viewModel.config.mockupStyle != .outline {
                 LabeledContent("border") {
-                    Slider(value: $viewModel.config.mockupBorderSize, in: 0...10, step: 0.5)
-                        .frame(width: 120)
-                    Text("\(viewModel.config.mockupBorderSize, specifier: "%.1f")")
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(.tertiary)
-                        .frame(width: 28)
+                    SliderWithDefaultCGFloat(
+                        value: $viewModel.config.mockupBorderSize,
+                        range: 0...10,
+                        defaultValue: 3,
+                        step: 0.5,
+                        showValue: true,
+                        decimals: 1
+                    )
                 }
             }
         }
@@ -211,17 +230,29 @@ struct ScreenshotEditorView: View {
             }
             
             LabeledContent("radius") {
-                Slider(value: $viewModel.config.borderRadius, in: 0...40)
-                    .frame(width: 120)
-                Text("\(Int(viewModel.config.borderRadius))")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.tertiary)
-                    .frame(width: 28)
+                SliderWithDefaultCGFloat(
+                    value: $viewModel.config.borderRadius,
+                    range: 0...40,
+                    defaultValue: 20,
+                    showValue: true
+                )
             }
         }
         
         // Transform
         Section("transform") {
+            // Scale
+            LabeledContent("scale") {
+                SliderWithDefaultCGFloat(
+                    value: $viewModel.config.scale,
+                    range: 0.1...3.0,
+                    defaultValue: 1.0,
+                    showValue: true,
+                    decimals: 2
+                )
+            }
+            
+            // Rotation Z (2D)
             LabeledContent("rotation") {
                 HStack(spacing: 4) {
                     Button { viewModel.config.rotation -= 90 } label: {
@@ -240,12 +271,54 @@ struct ScreenshotEditorView: View {
                     .buttonStyle(.bordered)
                 }
             }
+            
+            // Rotation X (3D)
+            LabeledContent("rotation.x") {
+                HStack(spacing: 4) {
+                    SliderWithDefault(
+                        value: $viewModel.config.rotationX,
+                        range: -90...90,
+                        defaultValue: 0,
+                        showValue: true,
+                        unit: "°"
+                    )
+                    Button {
+                        viewModel.config.rotationX = 0
+                    } label: {
+                        Image(systemName: "arrow.counterclockwise")
+                            .font(.system(size: 11))
+                    }
+                    .buttonStyle(.bordered)
+                    .help("Reset")
+                }
+            }
+            
+            // Rotation Y (3D)
+            LabeledContent("rotation.y") {
+                HStack(spacing: 4) {
+                    SliderWithDefault(
+                        value: $viewModel.config.rotationY,
+                        range: -90...90,
+                        defaultValue: 0,
+                        showValue: true,
+                        unit: "°"
+                    )
+                    Button {
+                        viewModel.config.rotationY = 0
+                    } label: {
+                        Image(systemName: "arrow.counterclockwise")
+                            .font(.system(size: 11))
+                    }
+                    .buttonStyle(.bordered)
+                    .help("Reset")
+                }
+            }
         }
     }
     
-    // MARK: - Canvas Section (Background & Layout)
+    // MARK: - Background Section (Tab 1)
     @ViewBuilder
-    private var canvasSectionContent: some View {
+    private var backgroundSectionContent: some View {
         // Background Type
         Section("background") {
             // Type picker with icons
@@ -261,48 +334,78 @@ struct ScreenshotEditorView: View {
             backgroundContent
         }
         
-        // Layout
-        Section("layout") {
-            LabeledContent("padding") {
-                Slider(value: $viewModel.config.padding, in: 0...200, step: 8)
-                    .frame(width: 100)
-                Text("\(Int(viewModel.config.padding))")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.tertiary)
-                    .frame(width: 28)
-            }
-            LabeledContent("scale") {
-                Slider(value: $viewModel.config.imageScale, in: 10...200, step: 5)
-                    .frame(width: 100)
-                Text("\(Int(viewModel.config.imageScale))%")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.tertiary)
-                    .frame(width: 36)
-            }
-        }
-        
         // Effects - available for all backgrounds except transparent
         if viewModel.config.backgroundType != .transparent {
             Section("effects") {
+                // Blur - unified for all backgrounds
                 LabeledContent("blur") {
-                    Slider(value: $viewModel.config.backgroundBlur, in: 0...100)
-                        .frame(width: 100)
+                    SliderWithDefault(
+                        value: $viewModel.config.meshGradientConfig.blurAmount,
+                        range: 0...150,
+                        defaultValue: 0,
+                        showValue: true
+                    )
                 }
+                
+                // Saturation
                 LabeledContent("saturation") {
-                    Slider(value: $viewModel.config.meshGradientConfig.saturation, in: 0...200)
-                        .frame(width: 100)
+                    SliderWithDefault(
+                        value: $viewModel.config.meshGradientConfig.saturation,
+                        range: 0...200,
+                        defaultValue: 100,
+                        showValue: true,
+                        unit: "%"
+                    )
                 }
+                
+                // Brightness
                 LabeledContent("brightness") {
-                    Slider(value: $viewModel.config.meshGradientConfig.brightness, in: 50...150)
-                        .frame(width: 100)
+                    SliderWithDefault(
+                        value: $viewModel.config.meshGradientConfig.brightness,
+                        range: 50...150,
+                        defaultValue: 100,
+                        showValue: true,
+                        unit: "%"
+                    )
+                }
+                
+                // Noise - unified for all backgrounds
+                LabeledContent("noise") {
+                    SliderWithDefault(
+                        value: $viewModel.config.meshGradientConfig.noiseAmount,
+                        range: 0...100,
+                        defaultValue: 0,
+                        showValue: true
+                    )
                 }
             }
         }
     }
     
-    // MARK: - Formats Section
+    // MARK: - Layout Section (Tab 2)
     @ViewBuilder
-    private var formatsSectionContent: some View {
+    private var layoutSectionContent: some View {
+        // Layout Controls
+        Section("layout") {
+            LabeledContent("padding") {
+                SliderWithDefaultCGFloat(
+                    value: $viewModel.config.padding,
+                    range: 0...200,
+                    defaultValue: 80,
+                    showValue: true
+                )
+            }
+            LabeledContent("scale") {
+                SliderWithDefaultCGFloat(
+                    value: $viewModel.config.imageScale,
+                    range: 10...200,
+                    defaultValue: 100,
+                    showValue: true,
+                    unit: "%"
+                )
+            }
+        }
+        
         // Social Presets
         if viewModel.config.selectedSocialPreset != nil {
             Section("export.size") {
@@ -342,7 +445,11 @@ struct ScreenshotEditorView: View {
                 Label("social.presets", systemImage: "rectangle.3.group")
             }
         }
-        
+    }
+    
+    // MARK: - Export Section (Tab 3)
+    @ViewBuilder
+    private var exportSectionContent: some View {
         // Quick Actions
         Section("actions") {
             // Primary action - Copy
@@ -543,7 +650,6 @@ struct ScreenshotEditorView: View {
                 }
                 .id("canvas-\(viewModel.config.showMockup)-\(viewModel.config.mockupStyle.rawValue)")
                 .scaleEffect(viewModel.config.zoom / 100)
-                .rotationEffect(.degrees(viewModel.config.rotation))
                 .position(
                     x: geo.size.width / 2 + 150 + viewModel.offset.width + viewModel.lastOffset.width,
                     y: geo.size.height / 2 + viewModel.offset.height + viewModel.lastOffset.height
@@ -577,13 +683,40 @@ struct ScreenshotEditorView: View {
             viewModel.config.mockupStyle = style
         } label: {
             VStack(spacing: 4) {
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(style.gradient)
-                    .frame(height: 32)
-                    .overlay(
+                // Preview with fake screenshot inside
+                ZStack {
+                    // Background gradient/style
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(style.gradient)
+                    
+                    // Fake screenshot preview (white rounded rectangle)
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(Color.white.opacity(0.9))
+                        .padding(6)
+                        .overlay(
+                            // Fake content lines
+                            VStack(spacing: 2) {
+                                RoundedRectangle(cornerRadius: 1)
+                                    .fill(Color.gray.opacity(0.3))
+                                    .frame(height: 2)
+                                RoundedRectangle(cornerRadius: 1)
+                                    .fill(Color.gray.opacity(0.2))
+                                    .frame(height: 2)
+                            }
+                            .padding(8)
+                        )
+                    
+                    // Border for outline/border styles
+                    if style == .outline || style == .border {
                         RoundedRectangle(cornerRadius: 6)
-                            .strokeBorder(isSelected ? .white : .white.opacity(0.1), lineWidth: isSelected ? 2 : 0.5)
-                    )
+                            .strokeBorder(style == .outline ? .white.opacity(0.5) : .gray.opacity(0.5), lineWidth: style == .outline ? 1 : 2)
+                    }
+                }
+                .frame(height: 38)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .strokeBorder(isSelected ? .white : .white.opacity(0.1), lineWidth: isSelected ? 2 : 0.5)
+                )
                 
                 Text(style.displayName)
                     .font(.system(size: 9))
@@ -702,6 +835,117 @@ struct ScreenshotEditorView: View {
             }
     }
 }
+
+// MARK: - Slider with Default Indicator (Double version)
+struct SliderWithDefault: View {
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let defaultValue: Double
+    var step: Double? = nil
+    var showValue: Bool = false
+    var unit: String = ""
+    var decimals: Int = 0
+    
+    var body: some View {
+        HStack(spacing: 4) {
+            ZStack(alignment: .leading) {
+                // Background track
+                GeometryReader { geometry in
+                    // Default value indicator line
+                    let normalizedDefault = (defaultValue - range.lowerBound) / (range.upperBound - range.lowerBound)
+                    let defaultPosition = geometry.size.width * normalizedDefault
+                    
+                    Rectangle()
+                        .fill(Color.white.opacity(0.15))
+                        .frame(width: 2, height: 20)
+                        .position(x: defaultPosition, y: geometry.size.height / 2)
+                }
+                .frame(height: 20)
+                
+                // Actual slider
+                if let step = step {
+                    Slider(value: $value, in: range, step: step)
+                } else {
+                    Slider(value: $value, in: range)
+                }
+            }
+            .frame(width: 100)
+            
+            if showValue {
+                Text(formatValue(value) + unit)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                    .frame(width: unit.isEmpty ? 28 : 36, alignment: .trailing)
+            }
+        }
+    }
+    
+    private func formatValue(_ val: Double) -> String {
+        if decimals > 0 {
+            return String(format: "%.\(decimals)f", val)
+        } else if unit == "%" {
+            return "\(Int(val))"
+        } else {
+            return String(format: "%.0f", val)
+        }
+    }
+}
+
+// MARK: - Slider with Default Indicator (CGFloat version)
+struct SliderWithDefaultCGFloat: View {
+    @Binding var value: CGFloat
+    let range: ClosedRange<CGFloat>
+    let defaultValue: CGFloat
+    var step: CGFloat? = nil
+    var showValue: Bool = false
+    var unit: String = ""
+    var decimals: Int = 0
+    
+    var body: some View {
+        HStack(spacing: 4) {
+            ZStack(alignment: .leading) {
+                // Background track
+                GeometryReader { geometry in
+                    // Default value indicator line
+                    let normalizedDefault = (defaultValue - range.lowerBound) / (range.upperBound - range.lowerBound)
+                    let defaultPosition = geometry.size.width * normalizedDefault
+                    
+                    Rectangle()
+                        .fill(Color.white.opacity(0.15))
+                        .frame(width: 2, height: 20)
+                        .position(x: defaultPosition, y: geometry.size.height / 2)
+                }
+                .frame(height: 20)
+                
+                // Actual slider
+                if let step = step {
+                    Slider(value: $value, in: range, step: step)
+                } else {
+                    Slider(value: $value, in: range)
+                }
+            }
+            .frame(width: 100)
+            
+            if showValue {
+                Text(formatValue(value) + unit)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                    .frame(width: unit.isEmpty ? 28 : 36, alignment: .trailing)
+            }
+        }
+    }
+    
+    private func formatValue(_ val: CGFloat) -> String {
+        if decimals > 0 {
+            return String(format: "%.\(decimals)f", val)
+        } else if unit == "%" {
+            return "\(Int(val))"
+        } else {
+            return String(format: "%.0f", val)
+        }
+    }
+}
+
 
 
 

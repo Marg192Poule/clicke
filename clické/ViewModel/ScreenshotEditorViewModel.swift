@@ -30,7 +30,51 @@ class ScreenshotEditorViewModel: ObservableObject {
     init(originalImage: NSImage, toastManager: ToastManager? = nil) {
         self.originalImage = originalImage
         self.toastManager = toastManager
-        self.config = .default
+        
+        // Charger l'image locale par défaut
+        var defaultConfig = ScreenshotStyleConfig.default
+        
+        // Essayer plusieurs méthodes pour trouver l'image dans le bundle
+        var imageURL: URL? = nil
+        
+        // Méthode 1: Avec subdirectory "public"
+        if let url = Bundle.main.url(forResource: "Black and White Gradient Macbook Wallpaper_Texture", withExtension: "png", subdirectory: "public") {
+            imageURL = url
+        }
+        // Méthode 2: Sans subdirectory (directement dans le bundle)
+        else if let url = Bundle.main.url(forResource: "Black and White Gradient Macbook Wallpaper_Texture", withExtension: "png") {
+            imageURL = url
+        }
+        // Méthode 3: Chemin relatif depuis le bundle
+        else if let bundlePath = Bundle.main.resourcePath {
+            let filePath = "\(bundlePath)/public/Black and White Gradient Macbook Wallpaper_Texture.png"
+            if FileManager.default.fileExists(atPath: filePath) {
+                imageURL = URL(fileURLWithPath: filePath)
+            }
+        }
+        // Méthode 4: Chemin absolu (pour le développement)
+        if imageURL == nil {
+            let devPath = "/Users/nath/Desktop/clicke/clické/public/Black and White Gradient Macbook Wallpaper_Texture.png"
+            if FileManager.default.fileExists(atPath: devPath) {
+                imageURL = URL(fileURLWithPath: devPath)
+            }
+        }
+        
+        // Charger l'image si trouvée
+        if let url = imageURL, let image = NSImage(contentsOf: url) {
+            defaultConfig.backgroundImageURL = url
+            defaultConfig.backgroundType = .image
+            defaultConfig.selectedMagicPreset = nil
+            defaultConfig.selectedGradient = nil
+            defaultConfig.selectedSolidColor = nil
+            self.selectedWallpaperURL = url
+            
+            // Précharger l'image dans la liste
+            let thumb = image.resizedProportionally(maxSize: NSSize(width: 400, height: 300))
+            self.wallpaperImages = [(url, thumb ?? image)]
+        }
+        
+        self.config = defaultConfig
     }
     
     // MARK: - Calculate Fit Zoom
@@ -205,7 +249,10 @@ class ScreenshotEditorViewModel: ObservableObject {
             }
             
             DispatchQueue.main.async {
-                self.wallpaperImages = loaded
+                // Ajouter les nouveaux wallpapers sans écraser ceux déjà chargés
+                let existingURLs = Set(self.wallpaperImages.map { $0.url })
+                let newWallpapers = loaded.filter { !existingURLs.contains($0.0) }
+                self.wallpaperImages.append(contentsOf: newWallpapers)
             }
         }
     }
@@ -427,6 +474,17 @@ class ScreenshotEditorViewModel: ObservableObject {
         let screenHeight = imageRect.height * zoom
         
         return CGRect(x: screenX, y: screenY, width: screenWidth, height: screenHeight)
+    }
+    
+    // MARK: - Zoom Actions
+    func zoomIn() {
+        let newZoom = min(config.zoom * 1.2, 300)
+        config.zoom = newZoom
+    }
+    
+    func zoomOut() {
+        let newZoom = max(config.zoom / 1.2, 10)
+        config.zoom = newZoom
     }
     
     // MARK: - Reset Actions
