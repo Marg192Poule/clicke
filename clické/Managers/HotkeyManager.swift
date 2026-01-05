@@ -157,9 +157,9 @@ class HotkeyManager {
     }
     
     // MARK: - Permissions
-    /// Vérifie les permissions d'accessibilité
+    /// Vérifie les permissions d'accessibilité (sans déclencher de popup)
     static func checkAccessibilityPermissions() -> Bool {
-        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
+        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: false]
         return AXIsProcessTrustedWithOptions(options as CFDictionary)
     }
     
