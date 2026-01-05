@@ -7,7 +7,7 @@ struct AppearanceSectionView: View {
         Section {
             Label {
                 VStack(alignment: .leading, spacing: 2) {
-                    Toggle("show.dock.icon", isOn: $showDockIcon)
+                    Toggle("show dock icon", isOn: $showDockIcon)
                 }
             } icon: {
                 Image(systemName: "dock.rectangle")
@@ -25,7 +25,7 @@ struct GeneralSectionView: View {
         Section {
             Label {
                 VStack(alignment: .leading, spacing: 2) {
-                    Toggle("copy.to.clipboard", isOn: $copyToClipboard)
+                    Toggle("copy to clipboard", isOn: $copyToClipboard)
                 }
             } icon: {
                 Image(systemName: "doc.on.clipboard")

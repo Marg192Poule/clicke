@@ -8,9 +8,9 @@ struct HotKeySectionView: View {
     @State private var keyMonitor: Any?
     
     var body: some View {
-        Section("Raccourci global") {
+        Section("Global Shortcut") {
             VStack(spacing: 12) {
-                // Hot key view (centré comme dans Hex)
+                // Hot key view (centered like in Hex)
                 HStack {
                     Spacer()
                     HotKeyView(
@@ -29,12 +29,12 @@ struct HotKeySectionView: View {
                 }
                 
                 if !isSettingHotKey && configuration.keyCode == 0 && !configuration.modifiers.isEmpty {
-                    Text("Raccourci modificateur uniquement")
+                    Text("Modifier-only shortcut")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
                 
-                Text("Appuyez sur la zone ci-dessus puis tapez la combinaison de touches souhaitée")
+                Text("Click the area above then type the desired key combination")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
             }
@@ -136,7 +136,7 @@ struct HotKeyView: View {
         .frame(maxWidth: .infinity)
         .background {
             if isActive && configuration.keyCode == 0 && configuration.modifiers.isEmpty {
-                Text("Entrez une combinaison de touches")
+                Text("Enter a key combination")
                     .foregroundColor(.secondary)
             }
         }

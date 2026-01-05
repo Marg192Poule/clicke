@@ -5,6 +5,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var statusItem: NSStatusItem?
     private let toastManager = ToastManager()
     private var settingsWindow: NSWindow?
+    private var onboardingWindow: NSWindow?
     private let hotkeyManager = HotkeyManager()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -29,6 +30,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         
         // Appliquer le paramètre initial
         updateDockIconVisibility()
+        
+        // Show onboarding if first launch
+        if !OnboardingViewModel.hasCompletedOnboarding() {
+            showOnboarding()
+        }
     }
     
     private func setupHotkeys() {
@@ -69,7 +75,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         )
         menu.addItem(
             NSMenuItem(
-                title: String(localized: "capture.window"),
+                title: String(localized: "window capture"),
                 action: #selector(tabCapture),
                 keyEquivalent: ""
             )
@@ -106,6 +112,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             
             // Vérifier si une capture a été faite
             if NSPasteboard.general.changeCount != pasteboardCountBefore {
+                // Jouer le son de capture
+                playCaptureSound()
+                
                 // Récupérer l'image du presse-papier
                 if let image = NSPasteboard.general.readObjects(
                     forClasses: [NSImage.self],
@@ -149,6 +158,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             
             // Vérifier si une capture a été faite
             if NSPasteboard.general.changeCount != pasteboardCountBefore {
+                // Jouer le son de capture
+                playCaptureSound()
+                
                 // Récupérer l'image du presse-papier
                 if let image = NSPasteboard.general.readObjects(
                     forClasses: [NSImage.self],
@@ -177,6 +189,37 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             )
         }
     }
+    
+    private func playCaptureSound() {
+        let settings = Settings.current
+        guard settings.soundEffectsEnabled else { return }
+        
+        SoundManager.shared.playSound(
+            settings.captureSound,
+            volume: Float(settings.soundEffectsVolume)
+        )
+    }
+
+    private func showOnboarding() {
+        let onboardingView = OnboardingView()
+        onboardingWindow = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 700),
+            styleMask: [.titled, .closable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        onboardingWindow?.isReleasedWhenClosed = false
+        onboardingWindow?.delegate = self
+        onboardingWindow?.title = "Welcome to Clické"
+        onboardingWindow?.contentView = NSHostingView(rootView: onboardingView)
+        onboardingWindow?.center()
+        onboardingWindow?.titlebarAppearsTransparent = true
+        onboardingWindow?.titleVisibility = .hidden
+        onboardingWindow?.backgroundColor = .clear
+        onboardingWindow?.isOpaque = false
+        onboardingWindow?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
 
     @objc private func openSettings() {
         if settingsWindow == nil {
@@ -203,6 +246,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard let window = notification.object as? NSWindow else { return }
         if window === settingsWindow {
             settingsWindow = nil
+        } else if window === onboardingWindow {
+            onboardingWindow = nil
         }
     }
     

@@ -43,13 +43,8 @@ struct SettingsContentView: View {
             // Sound Section
             SoundSectionView(
                 soundEnabled: $settings.soundEffectsEnabled,
-                volume: $settings.soundEffectsVolume
-            )
-            
-            // History Section
-            HistorySectionView(
-                saveHistory: $settings.saveHistory,
-                maxHistoryEntries: $settings.maxHistoryEntries
+                volume: $settings.soundEffectsVolume,
+                selectedSound: $settings.captureSound
             )
         }
         .formStyle(.grouped)
@@ -74,10 +69,10 @@ struct SettingsContentView: View {
             // Mettre à jour le dock icon
             NotificationCenter.default.post(name: NSNotification.Name("DockIconChanged"), object: nil)
         }
-        .alert("Permissions requises", isPresented: $showAccessibilityAlert) {
+        .alert("Permissions Required", isPresented: $showAccessibilityAlert) {
             Button("OK") { }
         } message: {
-            Text("clické a besoin des permissions d'accessibilité pour fonctionner. Veuillez autoriser l'application dans Réglages Système > Confidentialité et sécurité > Accessibilité.")
+            Text("Clické needs accessibility permissions to function. Please allow the app in System Settings > Privacy & Security > Accessibility.")
         }
     }
     
@@ -94,21 +89,7 @@ struct SettingsView: View {
     }
 }
 
-/// Contenu de la section Historique
-struct HistoryContentView: View {
-    var body: some View {
-        Form {
-            Section {
-                Text("L'historique des captures sera disponible ici")
-                    .font(.system(size: 13))
-                    .foregroundColor(.secondary)
-            } header: {
-                Text("Historique")
-            }
-        }
-        .formStyle(.grouped)
-    }
-}
+
 
 /// Contenu de la section À propos
 struct AboutContentView: View {

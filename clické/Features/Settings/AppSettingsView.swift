@@ -2,13 +2,11 @@ import SwiftUI
 
 enum SettingsTab: String, CaseIterable {
     case settings = "Settings"
-    case history = "History"
     case about = "About"
     
     var icon: String {
         switch self {
         case .settings: return "gearshape"
-        case .history: return "clock"
         case .about: return "info.circle"
         }
     }
@@ -30,14 +28,6 @@ struct AppSettingsView: View {
                 .tag(SettingsTab.settings)
                 
                 Button {
-                    selectedTab = .history
-                } label: {
-                    Label("History", systemImage: "clock")
-                }
-                .buttonStyle(.plain)
-                .tag(SettingsTab.history)
-                
-                Button {
                     selectedTab = .about
                 } label: {
                     Label("About", systemImage: "info.circle")
@@ -52,9 +42,6 @@ struct AppSettingsView: View {
                 case .settings:
                     SettingsContentView()
                         .navigationTitle("Preferences")
-                case .history:
-                    HistoryContentView()
-                        .navigationTitle("History")
                 case .about:
                     AboutContentView()
                         .navigationTitle("About")

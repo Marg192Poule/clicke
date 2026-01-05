@@ -10,7 +10,7 @@ struct TabCaptureHotKeySectionView: View {
     @State private var tabCurrentModifiers: NSEvent.ModifierFlags = []
     
     var body: some View {
-        Section("Capture d'onglet") {
+        Section("Window Capture") {
             VStack(spacing: 12) {
                 // Hot key view
                 HStack {
@@ -31,12 +31,12 @@ struct TabCaptureHotKeySectionView: View {
                 }
                 
                 if !isSettingTabHotKey && configuration.keyCode == 0 && !configuration.modifiers.isEmpty {
-                    Text("Raccourci modificateur uniquement")
+                    Text("Modifier-only shortcut")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
                 
-                Text("Configurez le raccourci pour capturer la fenêtre active (onglet)")
+                Text("Configure the shortcut to capture the active window")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
             }
@@ -66,7 +66,7 @@ struct TabCaptureHotKeySectionView: View {
                     return nil
                 }
             } else if event.type == .flagsChanged {
-                // Mettre à jour les modificateurs en temps réel
+                // Update modifiers in real-time
                 tabCurrentModifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
             }
             

@@ -2,6 +2,32 @@ import Foundation
 import AppKit
 import Carbon.HIToolbox
 
+enum CaptureSound: String, Codable, CaseIterable, Identifiable {
+    case hero = "Hero"
+    case submarine = "Submarine"
+    case blow = "Blow"
+    case frog = "Frog"
+    case funk = "Funk"
+    case sosumi = "Sosumi"
+    case basso = "Basso"
+    case pop = "Pop"
+    
+    var id: String { rawValue }
+    
+    var systemSoundName: String {
+        switch self {
+        case .hero: return "Hero"           // Son moderne et satisfaisant
+        case .submarine: return "Submarine" // Son distinctif
+        case .blow: return "Blow"           // Son rapide et léger
+        case .frog: return "Frog"           // Son amusant
+        case .funk: return "Funk"           // Son rythmé
+        case .sosumi: return "Sosumi"       // Son classique macOS
+        case .basso: return "Basso"         // Son profond
+        case .pop: return "Pop"             // Son court et sec
+        }
+    }
+}
+
 struct Settings: Codable, Equatable {
     var hotkey: HotkeyConfiguration
     var tabCaptureHotkey: HotkeyConfiguration
@@ -11,9 +37,7 @@ struct Settings: Codable, Equatable {
     
     var soundEffectsEnabled: Bool
     var soundEffectsVolume: Double
-    
-    var saveHistory: Bool
-    var maxHistoryEntries: Int?
+    var captureSound: CaptureSound
     
     static let `default` = Settings(
         hotkey: .default,
@@ -22,8 +46,7 @@ struct Settings: Codable, Equatable {
         copyToClipboard: true,
         soundEffectsEnabled: true,
         soundEffectsVolume: 0.5,
-        saveHistory: true,
-        maxHistoryEntries: 100
+        captureSound: .frog
     )
     
     private static let settingsKey = "Settings"
