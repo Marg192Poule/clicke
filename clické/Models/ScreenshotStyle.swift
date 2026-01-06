@@ -213,11 +213,14 @@ struct SimpleGradientConfig: Equatable {
     // Create gradient view based on style with effects
     // Note: Blur and noise are applied at the canvas level to avoid issues with blur+noise combination
     @ViewBuilder
-    func gradientView(size: CGSize) -> some View {
+    func gradientView(size: CGSize, isRendering: Bool = false) -> some View {
         gradientBase(size: size)
+            // Use SwiftUI native modifiers during export (Metal shaders don't work with ImageRenderer)
+            .saturation(isRendering ? saturation / 100 : 1.0)
+            .brightness(isRendering ? (brightness - 100) / 100 : 0.0)
             .colorAdjustments(
-                saturation: saturation / 100,
-                brightness: (brightness - 100) / 100
+                saturation: isRendering ? 1.0 : saturation / 100,
+                brightness: isRendering ? 0.0 : (brightness - 100) / 100
             )
             .frame(width: size.width, height: size.height)
     }

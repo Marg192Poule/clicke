@@ -8,6 +8,7 @@ struct ScreenshotPreviewCanvas: View {
     @Binding var isDragging: Bool
     var onScreenshotOffsetChanged: ((CGSize) -> Void)? = nil
     var isRendering: Bool = false // True when rendering for export, false for preview
+    var preloadedBackgroundImage: NSImage? = nil // Preloaded image for export rendering
     
     private let canvasCornerRadius: CGFloat = 24
     @State private var dragOffset: CGSize = .zero
@@ -23,7 +24,8 @@ struct ScreenshotPreviewCanvas: View {
                     .blur(radius: config.gradientConfig.blurAmount) // Unified blur for all backgrounds
                 
                 // Noise overlay as separate layer (not affected by blur)
-                if config.gradientConfig.noiseAmount > 0 {
+                // Skip noise texture during export rendering (Metal shaders don't work with ImageRenderer)
+                if config.gradientConfig.noiseAmount > 0 && !isRendering {
                     NoiseTextureView(intensity: config.gradientConfig.noiseAmount / 100)
                 }
             }
@@ -246,7 +248,7 @@ struct ScreenshotPreviewCanvas: View {
     
     @ViewBuilder
     private var gradientBackground: some View {
-        config.gradientConfig.gradientView(size: CGSize(width: totalWidth, height: totalHeight))
+        config.gradientConfig.gradientView(size: CGSize(width: totalWidth, height: totalHeight), isRendering: isRendering)
     }
     
     @ViewBuilder
@@ -264,10 +266,12 @@ struct ScreenshotPreviewCanvas: View {
                 config.customColor
             }
         }
-        // GPU-accelerated color adjustments via Metal shader
+        // Color adjustments: Use SwiftUI native modifiers during export (Metal shaders don't work with ImageRenderer)
+        .saturation(isRendering ? config.gradientConfig.saturation / 100 : 1.0)
+        .brightness(isRendering ? (config.gradientConfig.brightness - 100) / 100 : 0.0)
         .colorAdjustments(
-            saturation: config.gradientConfig.saturation / 100,
-            brightness: (config.gradientConfig.brightness - 100) / 100
+            saturation: isRendering ? 1.0 : config.gradientConfig.saturation / 100,
+            brightness: isRendering ? 0.0 : (config.gradientConfig.brightness - 100) / 100
         )
     }
     
@@ -275,8 +279,12 @@ struct ScreenshotPreviewCanvas: View {
     private var imageBackground: some View {
         Group {
             if config.backgroundImageURL != nil {
-                // Show immediately with cached image or fallback, load async
-                if let cachedImage = loadedBackgroundImage {
+                // Use preloaded image for export, or cached image for preview
+                if let preloaded = preloadedBackgroundImage {
+                    Image(nsImage: preloaded)
+                        .resizable()
+                        .scaledToFill()
+                } else if let cachedImage = loadedBackgroundImage {
                     Image(nsImage: cachedImage)
                         .resizable()
                         .scaledToFill()
@@ -290,10 +298,12 @@ struct ScreenshotPreviewCanvas: View {
                 colorBackground
             }
         }
-        // GPU-accelerated color adjustments via Metal shader
+        // Color adjustments: Use SwiftUI native modifiers during export (Metal shaders don't work with ImageRenderer)
+        .saturation(isRendering ? config.gradientConfig.saturation / 100 : 1.0)
+        .brightness(isRendering ? (config.gradientConfig.brightness - 100) / 100 : 0.0)
         .colorAdjustments(
-            saturation: config.gradientConfig.saturation / 100,
-            brightness: (config.gradientConfig.brightness - 100) / 100
+            saturation: isRendering ? 1.0 : config.gradientConfig.saturation / 100,
+            brightness: isRendering ? 0.0 : (config.gradientConfig.brightness - 100) / 100
         )
         .onChange(of: config.backgroundImageURL) { _, newURL in
             // Reset and load new image asynchronously
@@ -408,8 +418,13 @@ struct ScreenshotPreviewCanvas: View {
     @ViewBuilder
     private func sceneBackground(_ scene: ShadowScene) -> some View {
         // Use Metal shader for noise instead of CPU-intensive Canvas
-        LinearGradient(colors: scene.colors, startPoint: .top, endPoint: .bottom)
-            .noiseOverlay(intensity: 0.15) // Subtle noise via GPU shader
+        // Skip noise during export rendering (Metal shaders don't work with ImageRenderer)
+        if isRendering {
+            LinearGradient(colors: scene.colors, startPoint: .top, endPoint: .bottom)
+        } else {
+            LinearGradient(colors: scene.colors, startPoint: .top, endPoint: .bottom)
+                .noiseOverlay(intensity: 0.15) // Subtle noise via GPU shader
+        }
     }
     
     // MARK: - Styled Screenshot

@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import AVFoundation
 
 class ScreenshotRenderer {
     let image: NSImage
@@ -15,20 +16,20 @@ class ScreenshotRenderer {
         var exportConfig = config
         exportConfig.zoom = 100
         
+        // Preload background image synchronously if needed
+        var preloadedBackgroundImage: NSImage? = nil
+        if config.backgroundType == .image, let url = config.backgroundImageURL {
+            preloadedBackgroundImage = loadBackgroundImage(from: url)
+        }
+        
         // Create the preview canvas view with isRendering=true for transparent background
-        let view = ScreenshotPreviewCanvas(image: image, config: exportConfig, isDragging: .init(get: { false }, set: { _ in }), isRendering: true)
-            .scaleEffect(config.scale)
-            .rotationEffect(.degrees(config.rotation))
-            .rotation3DEffect(
-                .degrees(config.rotationX),
-                axis: (x: 1, y: 0, z: 0),
-                perspective: (config.rotationX != 0 || config.rotationY != 0) ? 1.0 : 0
-            )
-            .rotation3DEffect(
-                .degrees(config.rotationY),
-                axis: (x: 0, y: 1, z: 0),
-                perspective: (config.rotationX != 0 || config.rotationY != 0) ? 1.0 : 0
-            )
+        let view = ScreenshotPreviewCanvas(
+            image: image,
+            config: exportConfig,
+            isDragging: .init(get: { false }, set: { _ in }),
+            isRendering: true,
+            preloadedBackgroundImage: preloadedBackgroundImage
+        )
         
         // Calculate size
         let mockupPadding = mockupExtraPadding()
@@ -49,6 +50,78 @@ class ScreenshotRenderer {
         guard let cgImage = renderer.cgImage else { return nil }
         
         return NSImage(cgImage: cgImage, size: NSSize(width: width, height: height))
+    }
+    
+    // MARK: - Background Image Loading
+    private func loadBackgroundImage(from url: URL) -> NSImage? {
+        let videoExtensions = ["mov", "mp4"]
+        let isVideo = videoExtensions.contains(url.pathExtension.lowercased())
+        
+        if isVideo {
+            return extractFrameFromVideo(url: url)
+        } else {
+            return loadImageFromFile(url: url)
+        }
+    }
+    
+    private func loadImageFromFile(url: URL) -> NSImage? {
+        let ext = url.pathExtension.lowercased()
+        
+        // For HEIC files, use CIImage for better compatibility
+        if ext == "heic" || ext == "heif" {
+            guard let ciImage = CIImage(contentsOf: url) else { return nil }
+            let context = CIContext(options: [.useSoftwareRenderer: false, .cacheIntermediates: false])
+            guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else { return nil }
+            return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+        }
+        
+        // Standard image loading
+        guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else {
+            return NSImage(contentsOf: url)
+        }
+        return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+    }
+    
+    private func extractFrameFromVideo(url: URL) -> NSImage? {
+        let asset = AVURLAsset(url: url)
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        generator.requestedTimeToleranceAfter = CMTime.zero
+        generator.requestedTimeToleranceBefore = CMTime.zero
+        generator.maximumSize = CGSize(width: 3840, height: 2160)
+        
+        let time = CMTime(seconds: 1, preferredTimescale: 600)
+        
+        let semaphore = DispatchSemaphore(value: 0)
+        var resultImage: NSImage? = nil
+        
+        generator.generateCGImageAsynchronously(for: time) { cgImage, actualTime, error in
+            if let cgImage = cgImage {
+                resultImage = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+            }
+            semaphore.signal()
+        }
+        
+        semaphore.wait()
+        
+        if let image = resultImage {
+            return image
+        }
+        
+        // Try at 0 seconds if first attempt failed
+        let semaphore2 = DispatchSemaphore(value: 0)
+        resultImage = nil
+        
+        generator.generateCGImageAsynchronously(for: .zero) { cgImage, actualTime, error in
+            if let cgImage = cgImage {
+                resultImage = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+            }
+            semaphore2.signal()
+        }
+        
+        semaphore2.wait()
+        return resultImage
     }
     
     private func calculateRotatedSize(width: CGFloat, height: CGFloat, rotation: Double) -> CGSize {
