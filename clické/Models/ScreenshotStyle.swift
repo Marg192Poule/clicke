@@ -283,42 +283,44 @@ struct SimpleGradientPreset: Identifiable, Equatable {
     }
     
     static let presets: [SimpleGradientPreset] = [
-        // Sunset - warm orange to coral
-        SimpleGradientPreset(name: "Sunset", config: SimpleGradientConfig(
-            color1: Color(hex: "ff9966"),
-            color2: Color(hex: "ff5e62"),
-            color3: Color(hex: "ff5e62"),
+        // Cinder — near-black ember to deep rust
+        SimpleGradientPreset(name: "Cinder", config: SimpleGradientConfig(
+            color1: Color(hex: "120806"),
+            color2: Color(hex: "6b1f14"),
+            color3: Color(hex: "6b1f14"),
             useThreeColors: false
         )),
-        // Ocean - deep blue
-        SimpleGradientPreset(name: "Ocean", config: SimpleGradientConfig(
-            color1: Color(hex: "2193b0"),
-            color2: Color(hex: "6dd5ed"),
-            color3: Color(hex: "6dd5ed"),
+        // Trench — ink navy to cold steel blue
+        SimpleGradientPreset(name: "Trench", config: SimpleGradientConfig(
+            color1: Color(hex: "050a14"),
+            color2: Color(hex: "233a52"),
+            color3: Color(hex: "233a52"),
             useThreeColors: false
         )),
-        // Forest - natural green
-        SimpleGradientPreset(name: "Forest", config: SimpleGradientConfig(
-            color1: Color(hex: "134e5e"),
-            color2: Color(hex: "71b280"),
-            color3: Color(hex: "71b280"),
+        // Black Pine — almost-black green to sharp moss
+        SimpleGradientPreset(name: "Black Pine", config: SimpleGradientConfig(
+            color1: Color(hex: "070f0b"),
+            color2: Color(hex: "2f5a45"),
+            color3: Color(hex: "2f5a45"),
             useThreeColors: false
         )),
-        // Sand - warm neutral
-        SimpleGradientPreset(name: "Sand", config: SimpleGradientConfig(
-            color1: Color(hex: "d4a574"),
-            color2: Color(hex: "e8ceb0"),
-            color3: Color(hex: "e8ceb0"),
+        // Obsidian Sand — deep charcoal to warm mineral beige
+        SimpleGradientPreset(name: "Obsidian Sand", config: SimpleGradientConfig(
+            color1: Color(hex: "0e0c0b"),
+            color2: Color(hex: "6a5a4a"),
+            color3: Color(hex: "6a5a4a"),
             useThreeColors: false
         )),
-        // Night - dark elegant
-        SimpleGradientPreset(name: "Night", config: SimpleGradientConfig(
-            color1: Color(hex: "0f2027"),
-            color2: Color(hex: "203a43"),
-            color3: Color(hex: "2c5364"),
+        // Midnight Surge — blue-black to electric deep teal
+        SimpleGradientPreset(name: "Midnight Surge", config: SimpleGradientConfig(
+            color1: Color(hex: "020409"),
+            color2: Color(hex: "0b1f2a"),
+            color3: Color(hex: "1f4e5f"),
             useThreeColors: true
         )),
     ]
+
+
 }
 
 // MARK: - Shadow Scene Mode

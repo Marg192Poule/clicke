@@ -866,7 +866,8 @@ struct ScreenshotEditorView: View {
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(isSelected ? .white : .secondary)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
+                .padding(.vertical, 10)
+                .contentShape(Rectangle())
                 .background {
                     if isSelected {
                         RoundedRectangle(cornerRadius: 7)
@@ -935,11 +936,13 @@ struct ScreenshotEditorView: View {
                 .resizable()
                 .scaledToFill()
                 .frame(width: 50, height: 34)
+                .clipped()
                 .clipShape(RoundedRectangle(cornerRadius: 5))
                 .overlay(
                     RoundedRectangle(cornerRadius: 5)
                         .strokeBorder(isSelected ? .white : .white.opacity(0.1), lineWidth: isSelected ? 2 : 0.5)
                 )
+                .contentShape(RoundedRectangle(cornerRadius: 5))
         }
         .buttonStyle(.plain)
     }
