@@ -46,17 +46,11 @@ struct NoiseOverlayModifier: ViewModifier {
     func body(content: Content) -> some View {
         if intensity > 0 {
             content
-                .overlay {
-                    Rectangle()
-                        .colorEffect(
-                            ShaderLibrary.noiseOverlay(
-                                .float(intensity)
-                            )
-                        )
-                        .blendMode(.softLight)
-                        .opacity(min(intensity * 1.2, 1.0))
-                        .allowsHitTesting(false)
-                }
+                .colorEffect(
+                    ShaderLibrary.noiseOverlay(
+                        .float(intensity)
+                    )
+                )
         } else {
             content
         }
@@ -109,5 +103,24 @@ struct PixelateShaderView: View {
                     .float(pixelSize)
                 )
             )
+    }
+}
+
+// MARK: - Noise Texture View (standalone overlay layer)
+/// A standalone noise texture that can be overlaid on any background
+/// This is independent of the background content, so blur won't affect it
+struct NoiseTextureView: View {
+    var intensity: Double // 0 to 1
+    
+    var body: some View {
+        Rectangle()
+            .fill(Color.gray) // Base color for the noise shader to work on
+            .colorEffect(
+                ShaderLibrary.noiseTexture(
+                    .float(intensity)
+                )
+            )
+            .blendMode(.softLight) // softLight preserves luminosity better than overlay
+            .allowsHitTesting(false)
     }
 }

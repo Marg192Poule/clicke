@@ -21,20 +21,19 @@ half4 noise(float2 position, half4 color, float intensity) {
 
 [[ stitchable ]]
 half4 noiseOverlay(float2 position, half4 color, float intensity) {
-    // Scale down position to create uniform grain density regardless of view size
-    // Using a fixed scale ensures consistent grain appearance
-    float2 scaledPos = position * 0.5;
+    // Use original position for fine grain (no scaling = smaller grain)
+    float2 p = position;
     
-    // Generate high-quality random noise for overlay
-    float value = fract(sin(dot(scaledPos, float2(12.9898, 78.233))) * 43758.5453);
+    // Generate noise value
+    float value = fract(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453);
     
-    // Create pure black/white grain (-1 to +1 range)
-    half grain = half(value * 2.0 - 1.0) * half(intensity);
+    // Create subtle grain offset (-0.5 to +0.5 range, centered)
+    half grain = half(value - 0.5) * half(intensity) * 0.25h;
     
-    // Return semi-transparent grain with visible intensity
-    half grayValue = 0.5h + grain * 0.35h;
+    // Mix with original color - adds/subtracts small amount
+    half3 result = color.rgb + grain;
     
-    return half4(grayValue, grayValue, grayValue, 1.0h);
+    return half4(clamp(result, 0.0h, 1.0h), color.a);
 }
 
 [[ stitchable ]]
@@ -81,6 +80,23 @@ half4 pixelate(float2 position, half4 color, float pixelSize) {
     half grayValue = half(0.2 + value * 0.2); // Range 0.2-0.4
     
     return half4(grayValue, grayValue, grayValue, 1.0h);
+}
+
+// MARK: - Noise Texture Shader (standalone grain overlay)
+// This creates a pure noise texture for softLight blend mode
+// SoftLight with 0.5 gray = no change, <0.5 = darken, >0.5 = lighten
+[[ stitchable ]]
+half4 noiseTexture(float2 position, half4 color, float intensity) {
+    // Generate fine grain noise (0 to 1)
+    float value = fract(sin(dot(position, float2(12.9898, 78.233))) * 43758.5453);
+    
+    // Center at 0.5 and scale by intensity
+    // At intensity=0: grain=0.5 (no effect with softLight)
+    // At intensity=1: grain ranges from ~0.3 to ~0.7
+    half grain = half(0.5 + (value - 0.5) * intensity * 0.4);
+    
+    // Full opacity - the grain value itself controls the effect
+    return half4(grain, grain, grain, 1.0h);
 }
 
 // MARK: - Checkerboard Shader (GPU-accelerated)

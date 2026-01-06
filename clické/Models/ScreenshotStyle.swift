@@ -144,9 +144,8 @@ struct GradientPreset: Identifiable, Equatable {
     ]
 }
 
-// MARK: - Mesh Gradient Style
-enum MeshGradientStyle: String, CaseIterable, Identifiable {
-    case mesh
+// MARK: - Simple Gradient Style
+enum GradientStyle: String, CaseIterable, Identifiable {
     case linear
     case radial
     case angular
@@ -155,7 +154,6 @@ enum MeshGradientStyle: String, CaseIterable, Identifiable {
     
     var displayName: String {
         switch self {
-        case .mesh: return "Mesh"
         case .linear: return "Linear"
         case .radial: return "Radial"
         case .angular: return "Angular"
@@ -164,7 +162,6 @@ enum MeshGradientStyle: String, CaseIterable, Identifiable {
     
     var icon: String {
         switch self {
-        case .mesh: return "circle.hexagongrid.fill"
         case .linear: return "arrow.up.right"
         case .radial: return "circle.dashed"
         case .angular: return "arrow.triangle.2.circlepath"
@@ -172,13 +169,14 @@ enum MeshGradientStyle: String, CaseIterable, Identifiable {
     }
 }
 
-// MARK: - Mesh Gradient Configuration
-struct MeshGradientConfig: Equatable {
-    var style: MeshGradientStyle = .mesh
-    var color1: Color = Color(hex: "667eea")  // Primary accent
-    var color2: Color = Color(hex: "f953c6")  // Secondary accent
-    var color3: Color = Color(hex: "0f0c29")  // Deep background
-    var color4: Color = Color(hex: "764ba2")  // Mid tone
+// MARK: - Simple Gradient Configuration
+struct SimpleGradientConfig: Equatable {
+    var style: GradientStyle = .linear
+    var color1: Color = Color(hex: "667eea")  // Start color
+    var color2: Color = Color(hex: "764ba2")  // Middle color (optional)
+    var color3: Color = Color(hex: "f953c6")  // End color
+    var useThreeColors: Bool = true           // Toggle between 2 or 3 colors
+    var angle: Double = 135                   // Angle for linear gradient (degrees)
     
     // Effects
     var blurAmount: Double = 0               // Blur for softer transitions (0-150)
@@ -186,10 +184,34 @@ struct MeshGradientConfig: Equatable {
     var saturation: Double = 100             // Color saturation (0-200)
     var brightness: Double = 100             // Brightness adjustment (50-150)
     
-    static let `default` = MeshGradientConfig()
+    static let `default` = SimpleGradientConfig()
+    
+    // Get colors array based on configuration
+    private var gradientColors: [Color] {
+        if useThreeColors {
+            return [color1, color2, color3]
+        } else {
+            return [color1, color3]
+        }
+    }
+    
+    // Convert angle to start/end points for linear gradient
+    private var linearStartPoint: UnitPoint {
+        let radians = (angle - 90) * .pi / 180
+        let x = 0.5 - cos(radians) * 0.5
+        let y = 0.5 - sin(radians) * 0.5
+        return UnitPoint(x: x, y: y)
+    }
+    
+    private var linearEndPoint: UnitPoint {
+        let radians = (angle - 90) * .pi / 180
+        let x = 0.5 + cos(radians) * 0.5
+        let y = 0.5 + sin(radians) * 0.5
+        return UnitPoint(x: x, y: y)
+    }
     
     // Create gradient view based on style with effects
-    // GPU-accelerated color adjustments via Metal shader
+    // Note: Blur and noise are applied at the canvas level to avoid issues with blur+noise combination
     @ViewBuilder
     func gradientView(size: CGSize) -> some View {
         gradientBase(size: size)
@@ -197,89 +219,37 @@ struct MeshGradientConfig: Equatable {
                 saturation: saturation / 100,
                 brightness: (brightness - 100) / 100
             )
-            .blur(radius: blurAmount) // Blur the gradient
-            .noiseOverlay(intensity: noiseAmount / 100) // Noise overlay on top (stays sharp)
+            .frame(width: size.width, height: size.height)
+    }
+    
+    // Preview version for preset buttons (with effects applied for visual feedback)
+    @ViewBuilder
+    func previewView(size: CGSize) -> some View {
+        gradientBase(size: size)
             .frame(width: size.width, height: size.height)
     }
     
     @ViewBuilder
     private func gradientBase(size: CGSize) -> some View {
         switch style {
-        case .mesh:
-            // Organic mesh with offset points for fluid look
-            MeshGradient(
-                width: 4,
-                height: 4,
-                points: [
-                    // Row 0 - slight wave
-                    [0.0, 0.0], [0.35, -0.05], [0.7, 0.05], [1.0, 0.0],
-                    // Row 1 - organic curve
-                    [-0.05, 0.3], [0.25, 0.35], [0.75, 0.25], [1.05, 0.35],
-                    // Row 2 - flowing
-                    [0.0, 0.65], [0.4, 0.7], [0.6, 0.6], [1.0, 0.7],
-                    // Row 3 - base wave
-                    [0.0, 1.0], [0.3, 1.05], [0.7, 0.95], [1.0, 1.0]
-                ],
-                colors: [
-                    // Row 0
-                    color3, color1, color2, color3,
-                    // Row 1
-                    color1, color4, color1, color2,
-                    // Row 2
-                    color2, color1, color4, color1,
-                    // Row 3
-                    color3, color2, color1, color3
-                ],
-                smoothsColors: true
-            )
         case .linear:
             LinearGradient(
-                stops: [
-                    .init(color: color1, location: 0.0),
-                    .init(color: color4, location: 0.3),
-                    .init(color: color2, location: 0.6),
-                    .init(color: color3, location: 1.0)
-                ],
-                startPoint: UnitPoint(x: 0, y: 0),
-                endPoint: UnitPoint(x: 1, y: 1)
+                colors: gradientColors,
+                startPoint: linearStartPoint,
+                endPoint: linearEndPoint
             )
         case .radial:
-            ZStack {
-                // Base layer
-                RadialGradient(
-                    colors: [color1, color2, color3],
-                    center: .center,
-                    startRadius: 0,
-                    endRadius: max(size.width, size.height) * 0.7
-                )
-                // Overlay for depth
-                RadialGradient(
-                    colors: [color4.opacity(0.6), .clear],
-                    center: UnitPoint(x: 0.3, y: 0.3),
-                    startRadius: 0,
-                    endRadius: max(size.width, size.height) * 0.4
-                )
-            }
+            RadialGradient(
+                colors: gradientColors,
+                center: .center,
+                startRadius: 0,
+                endRadius: max(size.width, size.height) * 0.7
+            )
         case .angular:
-            ZStack {
-                AngularGradient(
-                    stops: [
-                        .init(color: color1, location: 0.0),
-                        .init(color: color4, location: 0.25),
-                        .init(color: color2, location: 0.5),
-                        .init(color: color3, location: 0.75),
-                        .init(color: color1, location: 1.0)
-                    ],
-                    center: .center
-                )
-                // Soft center
-                RadialGradient(
-                    colors: [color3.opacity(0.8), .clear],
-                    center: .center,
-                    startRadius: 0,
-                    endRadius: min(size.width, size.height) * 0.3
-                )
-            }
+            AngularGradient(
+                colors: gradientColors + [gradientColors.first ?? color1],
+                center: .center
+            )
         }
     }
 }
@@ -302,100 +272,51 @@ struct GrainOverlay: View {
     }
 }
 
-// MARK: - Mesh Gradient Presets
-struct MeshGradientPreset: Identifiable, Equatable {
+// MARK: - Simple Gradient Presets
+struct SimpleGradientPreset: Identifiable, Equatable {
     let id = UUID()
     let name: String
-    let config: MeshGradientConfig
+    let config: SimpleGradientConfig
     
-    static func == (lhs: MeshGradientPreset, rhs: MeshGradientPreset) -> Bool {
+    static func == (lhs: SimpleGradientPreset, rhs: SimpleGradientPreset) -> Bool {
         lhs.id == rhs.id
     }
     
-    static let presets: [MeshGradientPreset] = [
-        // Cosmic Purple - vibrant and modern
-        MeshGradientPreset(name: "Cosmic", config: MeshGradientConfig(
-            color1: Color(hex: "667eea"),
-            color2: Color(hex: "f953c6"),
-            color3: Color(hex: "0f0c29"),
-            color4: Color(hex: "764ba2")
+    static let presets: [SimpleGradientPreset] = [
+        // Sunset - warm orange to coral
+        SimpleGradientPreset(name: "Sunset", config: SimpleGradientConfig(
+            color1: Color(hex: "ff9966"),
+            color2: Color(hex: "ff5e62"),
+            color3: Color(hex: "ff5e62"),
+            useThreeColors: false
         )),
-        // Ocean Depth
-        MeshGradientPreset(name: "Ocean", config: MeshGradientConfig(
-            color1: Color(hex: "00d2ff"),
-            color2: Color(hex: "3a7bd5"),
-            color3: Color(hex: "0a192f"),
-            color4: Color(hex: "667eea")
+        // Ocean - deep blue
+        SimpleGradientPreset(name: "Ocean", config: SimpleGradientConfig(
+            color1: Color(hex: "2193b0"),
+            color2: Color(hex: "6dd5ed"),
+            color3: Color(hex: "6dd5ed"),
+            useThreeColors: false
         )),
-        // Aurora Borealis
-        MeshGradientPreset(name: "Aurora", config: MeshGradientConfig(
-            color1: Color(hex: "00f260"),
-            color2: Color(hex: "0575e6"),
-            color3: Color(hex: "0d1b2a"),
-            color4: Color(hex: "38ef7d")
+        // Forest - natural green
+        SimpleGradientPreset(name: "Forest", config: SimpleGradientConfig(
+            color1: Color(hex: "134e5e"),
+            color2: Color(hex: "71b280"),
+            color3: Color(hex: "71b280"),
+            useThreeColors: false
         )),
-        // Sunset Vibes
-        MeshGradientPreset(name: "Sunset", config: MeshGradientConfig(
-            color1: Color(hex: "ff6b6b"),
-            color2: Color(hex: "feca57"),
-            color3: Color(hex: "1a1a2e"),
-            color4: Color(hex: "ff9ff3")
+        // Sand - warm neutral
+        SimpleGradientPreset(name: "Sand", config: SimpleGradientConfig(
+            color1: Color(hex: "d4a574"),
+            color2: Color(hex: "e8ceb0"),
+            color3: Color(hex: "e8ceb0"),
+            useThreeColors: false
         )),
-        // Neon Nights
-        MeshGradientPreset(name: "Neon", config: MeshGradientConfig(
-            color1: Color(hex: "f953c6"),
-            color2: Color(hex: "00ffff"),
-            color3: Color(hex: "0a0a0a"),
-            color4: Color(hex: "b91d73")
-        )),
-        // Cotton Candy
-        MeshGradientPreset(name: "Candy", config: MeshGradientConfig(
-            color1: Color(hex: "ffecd2"),
-            color2: Color(hex: "fcb69f"),
-            color3: Color(hex: "f8b4d9"),
-            color4: Color(hex: "a8edea")
-        )),
-        // Deep Space
-        MeshGradientPreset(name: "Space", config: MeshGradientConfig(
-            color1: Color(hex: "4158d0"),
-            color2: Color(hex: "c850c0"),
-            color3: Color(hex: "000000"),
-            color4: Color(hex: "ffcc70")
-        )),
-        // Emerald Dream
-        MeshGradientPreset(name: "Emerald", config: MeshGradientConfig(
-            color1: Color(hex: "11998e"),
-            color2: Color(hex: "38ef7d"),
-            color3: Color(hex: "0b3d0b"),
-            color4: Color(hex: "56ab2f")
-        )),
-        // Fire & Ice
-        MeshGradientPreset(name: "Contrast", config: MeshGradientConfig(
-            color1: Color(hex: "ff416c"),
-            color2: Color(hex: "74ebd5"),
-            color3: Color(hex: "0f0f0f"),
-            color4: Color(hex: "ff4b2b")
-        )),
-        // Lavender Mist
-        MeshGradientPreset(name: "Lavender", config: MeshGradientConfig(
-            color1: Color(hex: "e0c3fc"),
-            color2: Color(hex: "8ec5fc"),
-            color3: Color(hex: "2d1b69"),
-            color4: Color(hex: "c471ed")
-        )),
-        // Midnight Blue
-        MeshGradientPreset(name: "Midnight", config: MeshGradientConfig(
-            color1: Color(hex: "2c3e50"),
-            color2: Color(hex: "4ca1af"),
-            color3: Color(hex: "000428"),
-            color4: Color(hex: "004e92")
-        )),
-        // Warm Glow
-        MeshGradientPreset(name: "Warm", config: MeshGradientConfig(
-            color1: Color(hex: "f7971e"),
-            color2: Color(hex: "ffd200"),
-            color3: Color(hex: "2d1f0f"),
-            color4: Color(hex: "ff5f6d")
+        // Night - dark elegant
+        SimpleGradientPreset(name: "Night", config: SimpleGradientConfig(
+            color1: Color(hex: "0f2027"),
+            color2: Color(hex: "203a43"),
+            color3: Color(hex: "2c5364"),
+            useThreeColors: true
         )),
     ]
 }
@@ -551,9 +472,9 @@ struct ScreenshotStyleConfig: Equatable {
     var backgroundImageURL: URL? = nil
     var customColor: Color = .white
     
-    // Mesh Gradient
-    var meshGradientConfig: MeshGradientConfig = MeshGradientPreset.presets.first?.config ?? .default
-    var selectedMeshPreset: MeshGradientPreset? = MeshGradientPreset.presets.first
+    // Simple Gradient
+    var gradientConfig: SimpleGradientConfig = SimpleGradientPreset.presets.first?.config ?? .default
+    var selectedGradientPreset: SimpleGradientPreset? = SimpleGradientPreset.presets.first
     
     // Background Effects
     var backgroundNoise: Double = 0 // 0-100

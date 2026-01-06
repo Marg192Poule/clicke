@@ -15,13 +15,17 @@ struct ScreenshotPreviewCanvas: View {
     
     var body: some View {
         ZStack {
-            // Background with unified blur and noise overlay (except transparent)
+            // Background with unified blur (except transparent)
             if config.backgroundType == .transparent {
                 backgroundView
             } else {
                 backgroundView
-                    .blur(radius: config.meshGradientConfig.blurAmount) // Unified blur for all backgrounds
-                    .noiseOverlay(intensity: config.meshGradientConfig.noiseAmount / 100) // Unified noise overlay
+                    .blur(radius: config.gradientConfig.blurAmount) // Unified blur for all backgrounds
+                
+                // Noise overlay as separate layer (not affected by blur)
+                if config.gradientConfig.noiseAmount > 0 {
+                    NoiseTextureView(intensity: config.gradientConfig.noiseAmount / 100)
+                }
             }
             
             // Shadow scene underlay
@@ -242,7 +246,7 @@ struct ScreenshotPreviewCanvas: View {
     
     @ViewBuilder
     private var gradientBackground: some View {
-        config.meshGradientConfig.gradientView(size: CGSize(width: totalWidth, height: totalHeight))
+        config.gradientConfig.gradientView(size: CGSize(width: totalWidth, height: totalHeight))
     }
     
     @ViewBuilder
@@ -262,8 +266,8 @@ struct ScreenshotPreviewCanvas: View {
         }
         // GPU-accelerated color adjustments via Metal shader
         .colorAdjustments(
-            saturation: config.meshGradientConfig.saturation / 100,
-            brightness: (config.meshGradientConfig.brightness - 100) / 100
+            saturation: config.gradientConfig.saturation / 100,
+            brightness: (config.gradientConfig.brightness - 100) / 100
         )
     }
     
@@ -288,8 +292,8 @@ struct ScreenshotPreviewCanvas: View {
         }
         // GPU-accelerated color adjustments via Metal shader
         .colorAdjustments(
-            saturation: config.meshGradientConfig.saturation / 100,
-            brightness: (config.meshGradientConfig.brightness - 100) / 100
+            saturation: config.gradientConfig.saturation / 100,
+            brightness: (config.gradientConfig.brightness - 100) / 100
         )
         .onChange(of: config.backgroundImageURL) { _, newURL in
             // Reset and load new image asynchronously

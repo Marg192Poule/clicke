@@ -593,42 +593,38 @@ class ScreenshotEditorViewModel: ObservableObject {
         config.screenshotOffset = .zero
     }
     
-    // MARK: - Mesh Gradient Actions
-    func randomizeMeshGradient() {
-        // Generate 4 harmonious colors with good contrast
+    // MARK: - Gradient Actions
+    func randomizeGradient() {
+        // Generate harmonious colors
         let baseHue = Double.random(in: 0...1)
         
-        // Accent color 1 - vibrant primary
-        config.meshGradientConfig.color1 = Color(
+        // Color 1 - vibrant start
+        config.gradientConfig.color1 = Color(
             hue: baseHue,
-            saturation: Double.random(in: 0.7...1.0),
+            saturation: Double.random(in: 0.6...1.0),
             brightness: Double.random(in: 0.7...0.95)
         )
         
-        // Accent color 2 - complementary or split
-        let hue2 = (baseHue + Double.random(in: 0.3...0.5)).truncatingRemainder(dividingBy: 1.0)
-        config.meshGradientConfig.color2 = Color(
+        // Color 2 - middle tone (analogous)
+        let hue2 = (baseHue + Double.random(in: 0.08...0.2)).truncatingRemainder(dividingBy: 1.0)
+        config.gradientConfig.color2 = Color(
             hue: hue2,
-            saturation: Double.random(in: 0.6...0.95),
-            brightness: Double.random(in: 0.65...0.9)
+            saturation: Double.random(in: 0.5...0.9),
+            brightness: Double.random(in: 0.6...0.9)
         )
         
-        // Deep background - dark version of base
-        config.meshGradientConfig.color3 = Color(
-            hue: baseHue,
-            saturation: Double.random(in: 0.4...0.7),
-            brightness: Double.random(in: 0.05...0.15)
+        // Color 3 - end (complementary or split)
+        let hue3 = (baseHue + Double.random(in: 0.25...0.5)).truncatingRemainder(dividingBy: 1.0)
+        config.gradientConfig.color3 = Color(
+            hue: hue3,
+            saturation: Double.random(in: 0.5...0.95),
+            brightness: Double.random(in: 0.65...0.95)
         )
         
-        // Mid-tone - bridge between accent and dark
-        let hue4 = (baseHue + Double.random(in: 0.1...0.25)).truncatingRemainder(dividingBy: 1.0)
-        config.meshGradientConfig.color4 = Color(
-            hue: hue4,
-            saturation: Double.random(in: 0.5...0.8),
-            brightness: Double.random(in: 0.4...0.7)
-        )
+        // Randomize angle
+        config.gradientConfig.angle = Double(Int.random(in: 0...7) * 45)
         
-        // Randomize blur slightly
-        config.meshGradientConfig.blurAmount = Double.random(in: 40...80)
+        // Clear preset selection
+        config.selectedGradientPreset = nil
     }
 }

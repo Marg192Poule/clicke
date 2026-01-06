@@ -348,7 +348,7 @@ struct ScreenshotEditorView: View {
                 // Blur - unified for all backgrounds (limited to 80 for performance)
                 LabeledContent("blur") {
                     SliderWithDefault(
-                        value: $viewModel.config.meshGradientConfig.blurAmount,
+                        value: $viewModel.config.gradientConfig.blurAmount,
                         range: 0...80,
                         defaultValue: 0,
                         showValue: true
@@ -358,7 +358,7 @@ struct ScreenshotEditorView: View {
                 // Saturation (GPU-accelerated via Metal shader)
                 LabeledContent("saturation") {
                     SliderWithDefault(
-                        value: $viewModel.config.meshGradientConfig.saturation,
+                        value: $viewModel.config.gradientConfig.saturation,
                         range: 0...200,
                         defaultValue: 100,
                         showValue: true,
@@ -369,7 +369,7 @@ struct ScreenshotEditorView: View {
                 // Brightness (GPU-accelerated via Metal shader)
                 LabeledContent("brightness") {
                     SliderWithDefault(
-                        value: $viewModel.config.meshGradientConfig.brightness,
+                        value: $viewModel.config.gradientConfig.brightness,
                         range: 50...150,
                         defaultValue: 100,
                         showValue: true,
@@ -380,7 +380,7 @@ struct ScreenshotEditorView: View {
                 // Noise - unified for all backgrounds (GPU-accelerated)
                 LabeledContent("noise") {
                     SliderWithDefault(
-                        value: $viewModel.config.meshGradientConfig.noiseAmount,
+                        value: $viewModel.config.gradientConfig.noiseAmount,
                         range: 0...100,
                         defaultValue: 0,
                         showValue: true
@@ -642,11 +642,11 @@ struct ScreenshotEditorView: View {
         VStack(spacing: 14) {
             // Style picker
             HStack(spacing: 2) {
-                ForEach(MeshGradientStyle.allCases) { style in
-                    let isSelected = viewModel.config.meshGradientConfig.style == style
+                ForEach(GradientStyle.allCases) { style in
+                    let isSelected = viewModel.config.gradientConfig.style == style
                     Button {
                         withAnimation(.easeInOut(duration: 0.2)) {
-                            viewModel.config.meshGradientConfig.style = style
+                            viewModel.config.gradientConfig.style = style
                         }
                     } label: {
                         Text(style.displayName)
@@ -666,29 +666,41 @@ struct ScreenshotEditorView: View {
             .padding(3)
             .background(Color.gray.opacity(0.2), in: Capsule())
             
-            // Color pickers
-            HStack(spacing: 4) {
-                ForEach(0..<4, id: \.self) { index in
-                    let binding: Binding<Color> = {
-                        switch index {
-                        case 0: return $viewModel.config.meshGradientConfig.color1
-                        case 1: return $viewModel.config.meshGradientConfig.color2
-                        case 2: return $viewModel.config.meshGradientConfig.color3
-                        default: return $viewModel.config.meshGradientConfig.color4
-                        }
-                    }()
-                    
-                    ColorPicker("", selection: binding)
+            // Color pickers - simplified to 2 or 3 colors
+            HStack(spacing: 8) {
+                ColorPicker("", selection: $viewModel.config.gradientConfig.color1)
+                    .labelsHidden()
+                    .scaleEffect(1.2)
+                    .frame(width: 36, height: 32)
+                
+                if viewModel.config.gradientConfig.useThreeColors {
+                    ColorPicker("", selection: $viewModel.config.gradientConfig.color2)
                         .labelsHidden()
                         .scaleEffect(1.2)
                         .frame(width: 36, height: 32)
                 }
                 
+                ColorPicker("", selection: $viewModel.config.gradientConfig.color3)
+                    .labelsHidden()
+                    .scaleEffect(1.2)
+                    .frame(width: 36, height: 32)
+                
                 Spacer()
+                
+                // Toggle 2/3 colors
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        viewModel.config.gradientConfig.useThreeColors.toggle()
+                    }
+                } label: {
+                    Image(systemName: viewModel.config.gradientConfig.useThreeColors ? "3.circle.fill" : "2.circle.fill")
+                }
+                .buttonStyle(.bordered)
+                .help(viewModel.config.gradientConfig.useThreeColors ? "Use 2 colors" : "Use 3 colors")
                 
                 Button {
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
-                        viewModel.randomizeMeshGradient()
+                        viewModel.randomizeGradient()
                     }
                 } label: {
                     Image(systemName: "dice.fill")
@@ -697,10 +709,23 @@ struct ScreenshotEditorView: View {
                 .help("Randomize")
             }
             
+            // Angle slider for linear gradient
+            if viewModel.config.gradientConfig.style == .linear {
+                HStack {
+                    Image(systemName: "angle")
+                        .foregroundStyle(.secondary)
+                        .font(.system(size: 11))
+                    Slider(value: $viewModel.config.gradientConfig.angle, in: 0...360, step: 15)
+                    Text("\(Int(viewModel.config.gradientConfig.angle))°")
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 35)
+                }
+            }
             
             // Presets
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 48), spacing: 6)], spacing: 6) {
-                ForEach(MeshGradientPreset.presets) { preset in
+                ForEach(SimpleGradientPreset.presets) { preset in
                     gradientPresetButton(preset)
                 }
             }
@@ -874,21 +899,20 @@ struct ScreenshotEditorView: View {
         .buttonStyle(.plain)
     }
     
-    private func gradientPresetButton(_ preset: MeshGradientPreset) -> some View {
-        let isSelected = viewModel.config.selectedMeshPreset?.id == preset.id
+    private func gradientPresetButton(_ preset: SimpleGradientPreset) -> some View {
+        let isSelected = viewModel.config.selectedGradientPreset?.id == preset.id
         return Button {
             withAnimation(.easeInOut(duration: 0.2)) {
-                let effects = viewModel.config.meshGradientConfig
-                viewModel.config.meshGradientConfig = preset.config
-                viewModel.config.meshGradientConfig.blurAmount = effects.blurAmount
-                viewModel.config.meshGradientConfig.noiseAmount = effects.noiseAmount
-                viewModel.config.meshGradientConfig.saturation = effects.saturation
-                viewModel.config.meshGradientConfig.brightness = effects.brightness
-                viewModel.config.selectedMeshPreset = preset
+                let effects = viewModel.config.gradientConfig
+                viewModel.config.gradientConfig = preset.config
+                viewModel.config.gradientConfig.blurAmount = effects.blurAmount
+                viewModel.config.gradientConfig.noiseAmount = effects.noiseAmount
+                viewModel.config.gradientConfig.saturation = effects.saturation
+                viewModel.config.gradientConfig.brightness = effects.brightness
+                viewModel.config.selectedGradientPreset = preset
             }
         } label: {
-            preset.config.gradientView(size: CGSize(width: 48, height: 32))
-                .frame(width: 48, height: 32)
+            preset.config.previewView(size: CGSize(width: 48, height: 32))
                 .clipShape(RoundedRectangle(cornerRadius: 6))
                 .overlay(
                     RoundedRectangle(cornerRadius: 6)
