@@ -66,16 +66,11 @@ class ScreenshotRenderer {
         guard config.showMockup else { return .zero }
         
         switch config.mockupStyle {
-        case .defaultStyle, .outline:
+        case .defaultStyle:
             return .zero
-        case .glassLight, .glassDark:
-            return CGSize(width: 12, height: 12)
-        case .liquidGlass:
-            return CGSize(width: 20, height: 20)
-        case .insetLight, .insetDark:
-            return CGSize(width: 28, height: 28)
-        case .border:
-            return CGSize(width: 6, height: 6)
+        case .glassEffect, .border:
+            let size = config.mockupBorderSize * 3 * 2
+            return CGSize(width: size, height: size)
         }
     }
 }

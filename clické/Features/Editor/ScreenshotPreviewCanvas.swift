@@ -188,19 +188,11 @@ struct ScreenshotPreviewCanvas: View {
         guard config.showMockup else { return .zero }
         
         switch config.mockupStyle {
-        case .defaultStyle, .outline:
+        case .defaultStyle:
             return .zero
-        case .glassLight, .glassDark:
-            return CGSize(width: config.mockupBorderSize, height: config.mockupBorderSize)
-        case .liquidGlass:
-            let borderSize = config.mockupBorderSize * 1.67
-            return CGSize(width: borderSize, height: borderSize)
-        case .insetLight, .insetDark:
-            let outerSize = config.mockupBorderSize * 2.33
-            return CGSize(width: outerSize, height: outerSize)
-        case .border:
-            let borderSize = config.mockupBorderSize * 0.5
-            return CGSize(width: borderSize, height: borderSize)
+        case .glassEffect, .border:
+            let size = config.mockupBorderSize * 3 * 2 // padding * 2 pour width et height
+            return CGSize(width: size, height: size)
         }
     }
     
@@ -268,8 +260,11 @@ struct ScreenshotPreviewCanvas: View {
                 config.customColor
             }
         }
-        .saturation(config.meshGradientConfig.saturation / 100)
-        .brightness((config.meshGradientConfig.brightness - 100) / 100)
+        // GPU-accelerated color adjustments via Metal shader
+        .colorAdjustments(
+            saturation: config.meshGradientConfig.saturation / 100,
+            brightness: (config.meshGradientConfig.brightness - 100) / 100
+        )
     }
     
     @ViewBuilder
@@ -291,8 +286,11 @@ struct ScreenshotPreviewCanvas: View {
                 colorBackground
             }
         }
-        .saturation(config.meshGradientConfig.saturation / 100)
-        .brightness((config.meshGradientConfig.brightness - 100) / 100)
+        // GPU-accelerated color adjustments via Metal shader
+        .colorAdjustments(
+            saturation: config.meshGradientConfig.saturation / 100,
+            brightness: (config.meshGradientConfig.brightness - 100) / 100
+        )
         .onChange(of: config.backgroundImageURL) { _, newURL in
             // Reset and load new image asynchronously
             loadedBackgroundImage = nil
@@ -405,24 +403,9 @@ struct ScreenshotPreviewCanvas: View {
     
     @ViewBuilder
     private func sceneBackground(_ scene: ShadowScene) -> some View {
-        ZStack {
-            LinearGradient(colors: scene.colors, startPoint: .top, endPoint: .bottom)
-            noiseTexture
-        }
-    }
-    
-    private var noiseTexture: some View {
-        Canvas { context, size in
-            for _ in 0..<Int(size.width * size.height / 500) {
-                let x = CGFloat.random(in: 0...size.width)
-                let y = CGFloat.random(in: 0...size.height)
-                let opacity = Double.random(in: 0.01...0.05)
-                context.fill(
-                    Circle().path(in: CGRect(x: x, y: y, width: 1.5, height: 1.5)),
-                    with: .color(.white.opacity(opacity))
-                )
-            }
-        }
+        // Use Metal shader for noise instead of CPU-intensive Canvas
+        LinearGradient(colors: scene.colors, startPoint: .top, endPoint: .bottom)
+            .noiseOverlay(intensity: 0.15) // Subtle noise via GPU shader
     }
     
     // MARK: - Styled Screenshot
@@ -432,18 +415,8 @@ struct ScreenshotPreviewCanvas: View {
         case .defaultStyle:
             Image(nsImage: image)
                 .clipShape(RoundedRectangle(cornerRadius: config.borderRadius))
-        case .glassLight:
-            glassMockup(isDark: false)
-        case .glassDark:
-            glassMockup(isDark: true)
-        case .liquidGlass:
-            liquidGlassMockup
-        case .insetLight:
-            insetMockup(isDark: false)
-        case .insetDark:
-            insetMockup(isDark: true)
-        case .outline:
-            outlineMockup
+        case .glassEffect:
+            glassEffectMockup
         case .border:
             borderMockup
         }
@@ -451,203 +424,56 @@ struct ScreenshotPreviewCanvas: View {
     
     // MARK: - Mockup Styles
     
-    private func glassMockup(isDark: Bool) -> some View {
-        let frameColor = isDark ? Color(hex: "1c1c1e") : Color(hex: "f5f5f7")
-        let borderColor = isDark ? Color.white.opacity(0.15) : Color.black.opacity(0.08)
-        let borderSize = config.mockupBorderSize
+    private var glassEffectMockup: some View {
+        let borderWidth = config.mockupBorderSize * 3 // Épaisseur du contour glass
+        let cornerRadius = config.borderRadius + borderWidth * 0.5
         
-        return ZStack {
-            if borderSize > 0 {
-                RoundedRectangle(cornerRadius: config.borderRadius + borderSize * 0.5)
-                    .fill(frameColor)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: config.borderRadius + borderSize * 0.5)
-                            .stroke(borderColor, lineWidth: 0.5)
-                    )
-                    .frame(width: image.size.width + borderSize, height: image.size.height + borderSize)
-            }
-            
-            Image(nsImage: image)
-                .clipShape(RoundedRectangle(cornerRadius: config.borderRadius))
-        }
-    }
-    
-    private var liquidGlassMockup: some View {
-        let borderSize = config.mockupBorderSize * 1.67 // Proportion par rapport à glass
-        
-        return ZStack {
-            if borderSize > 0 {
-                RoundedRectangle(cornerRadius: config.borderRadius + borderSize * 0.5)
-                    .fill(.ultraThinMaterial)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: config.borderRadius + borderSize * 0.5)
-                            .stroke(
-                                LinearGradient(
-                                    colors: [Color.white.opacity(0.5), Color.white.opacity(0.1)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ),
-                                lineWidth: 1
-                            )
-                    )
-                    .frame(width: image.size.width + borderSize, height: image.size.height + borderSize)
-            }
-            
-            Image(nsImage: image)
-                .clipShape(RoundedRectangle(cornerRadius: config.borderRadius))
-        }
-    }
-    
-    private func insetMockup(isDark: Bool) -> some View {
-        let outerColor = isDark ? Color(hex: "1a1a1a") : Color(hex: "f0f0f0")
-        let innerColor = isDark ? Color(hex: "0d0d0d") : Color(hex: "e0e0e0")
-        let outerSize = config.mockupBorderSize * 2.33 // Proportion pour le contour extérieur
-        let innerSize = config.mockupBorderSize * 0.67 // Proportion pour le contour intérieur
-        
-        return ZStack {
-            if outerSize > 0 {
-                RoundedRectangle(cornerRadius: config.borderRadius + outerSize * 0.5)
-                    .fill(outerColor)
-                    .frame(width: image.size.width + outerSize, height: image.size.height + outerSize)
-            }
-            
-            if innerSize > 0 {
-                RoundedRectangle(cornerRadius: config.borderRadius + innerSize * 0.5)
-                    .fill(innerColor)
-                    .frame(width: image.size.width + innerSize, height: image.size.height + innerSize)
-            }
-            
-            Image(nsImage: image)
-                .clipShape(RoundedRectangle(cornerRadius: config.borderRadius))
-        }
-    }
-    
-    private var outlineMockup: some View {
-        Image(nsImage: image)
+        return Image(nsImage: image)
             .clipShape(RoundedRectangle(cornerRadius: config.borderRadius))
-            .overlay(
-                RoundedRectangle(cornerRadius: config.borderRadius)
-                    .stroke(Color.white.opacity(0.25), lineWidth: 1.5)
-            )
+            .padding(borderWidth)
+            .glassEffect(.clear, in: RoundedRectangle(cornerRadius: cornerRadius))
     }
     
     private var borderMockup: some View {
-        let borderSize = config.mockupBorderSize * 0.5 // Plus fin que glass
+        let borderWidth = config.mockupBorderSize * 3 // Épaisseur du contour
         
-        return ZStack {
-            if borderSize > 0 {
-                RoundedRectangle(cornerRadius: config.borderRadius + borderSize * 0.5)
-                    .fill(Color(hex: "2d2d2d"))
-                    .frame(width: image.size.width + borderSize, height: image.size.height + borderSize)
+        return Image(nsImage: image)
+            .clipShape(RoundedRectangle(cornerRadius: config.borderRadius))
+            .padding(borderWidth)
+            .background {
+                RoundedRectangle(cornerRadius: config.borderRadius + borderWidth * 0.5)
+                    .fill(config.borderColor)
             }
-            
-            Image(nsImage: image)
-                .clipShape(RoundedRectangle(cornerRadius: config.borderRadius))
-        }
     }
 }
 
-// MARK: - Checkerboard View
+// MARK: - Checkerboard View (GPU-accelerated)
 struct CheckerboardView: View {
     let squareSize: CGFloat = 12
     
     var body: some View {
-        Canvas { context, size in
-            let rows = Int(size.height / squareSize) + 1
-            let cols = Int(size.width / squareSize) + 1
-            
-            for row in 0..<rows {
-                for col in 0..<cols {
-                    let isLight = (row + col) % 2 == 0
-                    let rect = CGRect(
-                        x: CGFloat(col) * squareSize,
-                        y: CGFloat(row) * squareSize,
-                        width: squareSize,
-                        height: squareSize
-                    )
-                    context.fill(
-                        Rectangle().path(in: rect),
-                        with: .color(isLight ? Color(hex: "3a3a3a") : Color(hex: "2a2a2a"))
-                    )
-                }
-            }
-        }
+        // Use Metal shader for GPU-accelerated checkerboard
+        CheckerboardShaderView(squareSize: squareSize)
     }
 }
 
-// MARK: - Noise View (Optimized with static pattern)
+// MARK: - Noise View (GPU-accelerated - uses Metal shader)
 struct NoiseView: View {
     let intensity: Double // 0 to 1
     
-    // Use a static seed for consistent noise pattern
-    private static let noisePattern: [[Double]] = {
-        var pattern: [[Double]] = []
-        let rows = 150 // Fixed pattern size
-        let cols = 200
-        for _ in 0..<rows {
-            var row: [Double] = []
-            for _ in 0..<cols {
-                row.append(Double.random(in: 0...1))
-            }
-            pattern.append(row)
-        }
-        return pattern
-    }()
-    
     var body: some View {
-        Canvas { context, size in
-            let pixelSize: CGFloat = 6 // Larger pixels = better performance
-            let cols = min(Int(size.width / pixelSize), Self.noisePattern[0].count)
-            let rows = min(Int(size.height / pixelSize), Self.noisePattern.count)
-            
-            for row in 0..<rows {
-                for col in 0..<cols {
-                    let randomValue = Self.noisePattern[row][col]
-                    let alpha = randomValue * intensity * 0.15
-                    
-                    let rect = CGRect(
-                        x: CGFloat(col) * pixelSize,
-                        y: CGFloat(row) * pixelSize,
-                        width: pixelSize,
-                        height: pixelSize
-                    )
-                    
-                    let grayValue = randomValue > 0.5 ? 1.0 : 0.0
-                    context.fill(
-                        Rectangle().path(in: rect),
-                        with: .color(Color.white.opacity(grayValue * alpha))
-                    )
-                }
-            }
-        }
-        .allowsHitTesting(false)
-        .drawingGroup() // Use Metal rendering for better performance
+        // Use Metal shader instead of Canvas for GPU acceleration
+        Rectangle()
+            .fill(Color.clear)
+            .noiseOverlay(intensity: intensity)
+            .allowsHitTesting(false)
     }
 }
 
-// MARK: - Pixelate View
+// MARK: - Pixelate View (GPU-accelerated)
 struct PixelateView: View {
     var body: some View {
-        Canvas { context, size in
-            let pixelSize: CGFloat = 8
-            let cols = Int(size.width / pixelSize) + 1
-            let rows = Int(size.height / pixelSize) + 1
-            
-            for row in 0..<rows {
-                for col in 0..<cols {
-                    let grayValue = Double.random(in: 0.2...0.4)
-                    let rect = CGRect(
-                        x: CGFloat(col) * pixelSize,
-                        y: CGFloat(row) * pixelSize,
-                        width: pixelSize,
-                        height: pixelSize
-                    )
-                    context.fill(
-                        Rectangle().path(in: rect),
-                        with: .color(Color.gray.opacity(grayValue))
-                    )
-                }
-            }
-        }
+        // Use Metal shader for GPU-accelerated pixelation (no flickering)
+        PixelateShaderView(pixelSize: 8)
     }
 }

@@ -1,15 +1,10 @@
 import SwiftUI
 import AppKit
 
-// MARK: - Mockup Style (comme shots.so)
+// MARK: - Mockup Style (simplifié)
 enum MockupStyle: String, CaseIterable, Identifiable {
     case defaultStyle
-    case glassLight
-    case glassDark
-    case liquidGlass
-    case insetLight
-    case insetDark
-    case outline
+    case glassEffect
     case border
     
     var id: String { rawValue }
@@ -17,26 +12,8 @@ enum MockupStyle: String, CaseIterable, Identifiable {
     var displayName: String {
         switch self {
         case .defaultStyle: return "Default"
-        case .glassLight: return "Glass Light"
-        case .glassDark: return "Glass Dark"
-        case .liquidGlass: return "Liquid..."
-        case .insetLight: return "Inset Light"
-        case .insetDark: return "Inset Dark"
-        case .outline: return "Outline"
+        case .glassEffect: return "Glass"
         case .border: return "Border"
-        }
-    }
-    
-    var gradient: LinearGradient {
-        switch self {
-        case .defaultStyle: return LinearGradient(colors: [.gray.opacity(0.3)], startPoint: .top, endPoint: .bottom)
-        case .glassLight: return LinearGradient(colors: [.white.opacity(0.8), .white.opacity(0.5)], startPoint: .top, endPoint: .bottom)
-        case .glassDark: return LinearGradient(colors: [.black.opacity(0.6), .black.opacity(0.8)], startPoint: .top, endPoint: .bottom)
-        case .liquidGlass: return LinearGradient(colors: [.orange, .pink], startPoint: .topLeading, endPoint: .bottomTrailing)
-        case .insetLight: return LinearGradient(colors: [.gray.opacity(0.2), .gray.opacity(0.1)], startPoint: .top, endPoint: .bottom)
-        case .insetDark: return LinearGradient(colors: [.black.opacity(0.4), .black.opacity(0.6)], startPoint: .top, endPoint: .bottom)
-        case .outline: return LinearGradient(colors: [.clear], startPoint: .top, endPoint: .bottom)
-        case .border: return LinearGradient(colors: [.gray.opacity(0.5)], startPoint: .top, endPoint: .bottom)
         }
     }
 }
@@ -94,36 +71,18 @@ enum BackgroundType: String, CaseIterable, Identifiable {
     }
 }
 
-// MARK: - Magic Color Preset
+// MARK: - Magic Color Preset (5 quick colors)
 struct MagicPreset: Identifiable, Equatable {
     let id = UUID()
     let colors: [Color]
-    let isPremium: Bool
+    let qisPremium: Bool
     
     static let presets: [MagicPreset] = [
-        // Row 1 - Neutrals
-        MagicPreset(colors: [Color(hex: "ffffff")], isPremium: false),
-        MagicPreset(colors: [Color(hex: "2d2d2d")], isPremium: false),
-        MagicPreset(colors: [Color(hex: "8b7355"), Color(hex: "d4c4a8")], isPremium: false),
-        MagicPreset(colors: [Color(hex: "4a6572"), Color(hex: "8fb3c9")], isPremium: false),
-        
-        // Row 2 - Light tones
-        MagicPreset(colors: [Color(hex: "f5f5f5")], isPremium: false),
-        MagicPreset(colors: [Color(hex: "ffd93d"), Color(hex: "ff6b6b")], isPremium: false),
-        MagicPreset(colors: [Color(hex: "c9b037"), Color(hex: "6b5b3b")], isPremium: false),
-        MagicPreset(colors: [Color(hex: "667eea"), Color(hex: "764ba2")], isPremium: false),
-        
-        // Row 3 - Warm tones
-        MagicPreset(colors: [Color(hex: "f0e6d3")], isPremium: false),
-        MagicPreset(colors: [Color(hex: "ff9a56"), Color(hex: "ff6b95")], isPremium: false),
-        MagicPreset(colors: [Color(hex: "a8edea"), Color(hex: "fed6e3")], isPremium: false),
-        MagicPreset(colors: [Color(hex: "11998e"), Color(hex: "38ef7d")], isPremium: false),
-        
-        // Row 4 - Dark tones
-        MagicPreset(colors: [Color(hex: "1a1a2e")], isPremium: false),
-        MagicPreset(colors: [Color(hex: "f953c6"), Color(hex: "b91d73")], isPremium: false),
-        MagicPreset(colors: [Color(hex: "4facfe"), Color(hex: "00f2fe")], isPremium: false),
-        MagicPreset(colors: [Color(hex: "ee0979"), Color(hex: "ff6a00")], isPremium: false),
+        MagicPreset(colors: [Color(hex: "ffffff")], qisPremium: false), // White
+        MagicPreset(colors: [Color(hex: "1a1a1a")], qisPremium: false), // Black
+        MagicPreset(colors: [Color(hex: "667eea")], qisPremium: false), // Blue
+        MagicPreset(colors: [Color(hex: "f953c6")], qisPremium: false), // Pink
+        MagicPreset(colors: [Color(hex: "11998e")], qisPremium: false), // Teal
     ]
 }
 
@@ -230,11 +189,14 @@ struct MeshGradientConfig: Equatable {
     static let `default` = MeshGradientConfig()
     
     // Create gradient view based on style with effects
+    // GPU-accelerated color adjustments via Metal shader
     @ViewBuilder
     func gradientView(size: CGSize) -> some View {
         gradientBase(size: size)
-            .saturation(saturation / 100)
-            .brightness((brightness - 100) / 100)
+            .colorAdjustments(
+                saturation: saturation / 100,
+                brightness: (brightness - 100) / 100
+            )
             .blur(radius: blurAmount) // Blur the gradient
             .noiseOverlay(intensity: noiseAmount / 100) // Noise overlay on top (stays sharp)
             .frame(width: size.width, height: size.height)
@@ -564,6 +526,7 @@ struct ScreenshotStyleConfig: Equatable {
     var mockupStyle: MockupStyle = .defaultStyle
     var showMockup: Bool = true
     var mockupBorderSize: CGFloat = 3 // Taille du contour du style (0-10)
+    var borderColor: Color = Color(hex: "2d2d2d") // Couleur du border personnalisable
     
     // Border
     var borderStyle: BorderStyle = .curved
@@ -581,7 +544,7 @@ struct ScreenshotStyleConfig: Equatable {
     
     // Background
     var backgroundType: BackgroundType = .image
-    var selectedMagicPreset: MagicPreset? = MagicPreset.presets[7] // Default purple gradient
+    var selectedMagicPreset: MagicPreset? = nil // Pas de preset par défaut
     var selectedShadowScene: ShadowScene? = nil
     var selectedSolidColor: SolidColor? = nil
     var selectedGradient: GradientPreset? = nil

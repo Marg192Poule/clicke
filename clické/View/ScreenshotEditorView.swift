@@ -9,9 +9,10 @@ struct ScreenshotEditorView: View {
     let onClose: () -> Void
     
     @StateObject private var viewModel: ScreenshotEditorViewModel
-    @State private var selectedTab: Int = 0
+    @State private var selectedTab: Int = 1
     @State private var isDraggingScreenshot: Bool = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @State private var colorPanelObserver: NSObjectProtocol?
     
     init(originalImage: NSImage, onCopy: @escaping (NSImage) -> Void, onClose: @escaping () -> Void) {
         self.originalImage = originalImage
@@ -196,14 +197,14 @@ struct ScreenshotEditorView: View {
     private var appearanceSectionContent: some View {
         // Mockup Style
         Section("mockup") {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 60), spacing: 8)], spacing: 8) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 80), spacing: 8)], spacing: 8) {
                 ForEach(MockupStyle.allCases) { style in
                     mockupStyleButton(style)
                 }
             }
             
-            if viewModel.config.showMockup && viewModel.config.mockupStyle != .defaultStyle && viewModel.config.mockupStyle != .outline {
-                LabeledContent("border") {
+            if viewModel.config.showMockup && viewModel.config.mockupStyle != .defaultStyle {
+                LabeledContent("size") {
                     SliderWithDefaultCGFloat(
                         value: $viewModel.config.mockupBorderSize,
                         range: 0...10,
@@ -212,6 +213,11 @@ struct ScreenshotEditorView: View {
                         showValue: true,
                         decimals: 1
                     )
+                }
+                
+                // Color picker pour le border
+                if viewModel.config.mockupStyle == .border {
+                    ColorPicker("color", selection: $viewModel.config.borderColor, supportsOpacity: false)
                 }
             }
         }
@@ -272,45 +278,47 @@ struct ScreenshotEditorView: View {
                 }
             }
             
-            // Rotation X (3D)
-            LabeledContent("rotation.x") {
-                HStack(spacing: 4) {
-                    SliderWithDefault(
-                        value: $viewModel.config.rotationX,
-                        range: -90...90,
-                        defaultValue: 0,
-                        showValue: true,
-                        unit: "°"
-                    )
-                    Button {
-                        viewModel.config.rotationX = 0
-                    } label: {
-                        Image(systemName: "arrow.counterclockwise")
-                            .font(.system(size: 11))
+            // Rotation X (3D) - désactivé avec glassEffect
+            if viewModel.config.mockupStyle != .glassEffect {
+                LabeledContent("rotation.x") {
+                    HStack(spacing: 4) {
+                        SliderWithDefault(
+                            value: $viewModel.config.rotationX,
+                            range: -90...90,
+                            defaultValue: 0,
+                            showValue: true,
+                            unit: "°"
+                        )
+                        Button {
+                            viewModel.config.rotationX = 0
+                        } label: {
+                            Image(systemName: "arrow.counterclockwise")
+                                .font(.system(size: 11))
+                        }
+                        .buttonStyle(.bordered)
+                        .help("Reset")
                     }
-                    .buttonStyle(.bordered)
-                    .help("Reset")
                 }
-            }
-            
-            // Rotation Y (3D)
-            LabeledContent("rotation.y") {
-                HStack(spacing: 4) {
-                    SliderWithDefault(
-                        value: $viewModel.config.rotationY,
-                        range: -90...90,
-                        defaultValue: 0,
-                        showValue: true,
-                        unit: "°"
-                    )
-                    Button {
-                        viewModel.config.rotationY = 0
-                    } label: {
-                        Image(systemName: "arrow.counterclockwise")
-                            .font(.system(size: 11))
+                
+                // Rotation Y (3D)
+                LabeledContent("rotation.y") {
+                    HStack(spacing: 4) {
+                        SliderWithDefault(
+                            value: $viewModel.config.rotationY,
+                            range: -90...90,
+                            defaultValue: 0,
+                            showValue: true,
+                            unit: "°"
+                        )
+                        Button {
+                            viewModel.config.rotationY = 0
+                        } label: {
+                            Image(systemName: "arrow.counterclockwise")
+                                .font(.system(size: 11))
+                        }
+                        .buttonStyle(.bordered)
+                        .help("Reset")
                     }
-                    .buttonStyle(.bordered)
-                    .help("Reset")
                 }
             }
         }
@@ -337,17 +345,17 @@ struct ScreenshotEditorView: View {
         // Effects - available for all backgrounds except transparent
         if viewModel.config.backgroundType != .transparent {
             Section("effects") {
-                // Blur - unified for all backgrounds
+                // Blur - unified for all backgrounds (limited to 80 for performance)
                 LabeledContent("blur") {
                     SliderWithDefault(
                         value: $viewModel.config.meshGradientConfig.blurAmount,
-                        range: 0...150,
+                        range: 0...80,
                         defaultValue: 0,
                         showValue: true
                     )
                 }
                 
-                // Saturation
+                // Saturation (GPU-accelerated via Metal shader)
                 LabeledContent("saturation") {
                     SliderWithDefault(
                         value: $viewModel.config.meshGradientConfig.saturation,
@@ -358,7 +366,7 @@ struct ScreenshotEditorView: View {
                     )
                 }
                 
-                // Brightness
+                // Brightness (GPU-accelerated via Metal shader)
                 LabeledContent("brightness") {
                     SliderWithDefault(
                         value: $viewModel.config.meshGradientConfig.brightness,
@@ -369,7 +377,7 @@ struct ScreenshotEditorView: View {
                     )
                 }
                 
-                // Noise - unified for all backgrounds
+                // Noise - unified for all backgrounds (GPU-accelerated)
                 LabeledContent("noise") {
                     SliderWithDefault(
                         value: $viewModel.config.meshGradientConfig.noiseAmount,
@@ -502,29 +510,130 @@ struct ScreenshotEditorView: View {
         }
     }
     
+    // MARK: - Open Native Color Panel
+    private func openColorPanel() {
+        let colorPanel = NSColorPanel.shared
+        
+        // Retirer l'observer précédent s'il existe
+        if let observer = colorPanelObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        
+        // Convertir la couleur SwiftUI en NSColor
+        let currentNSColor: NSColor
+        if viewModel.config.customColor != .clear {
+            currentNSColor = NSColor(viewModel.config.customColor)
+        } else {
+            currentNSColor = .white
+        }
+        
+        colorPanel.color = currentNSColor
+        colorPanel.isContinuous = true
+        
+        // Observer les changements de couleur
+        let observer = NotificationCenter.default.addObserver(
+            forName: NSColorPanel.colorDidChangeNotification,
+            object: colorPanel,
+            queue: .main
+        ) { _ in
+            let selectedColor = colorPanel.color
+            self.viewModel.config.customColor = Color(nsColor: selectedColor)
+            
+            // Désélectionner les presets quand une couleur personnalisée est choisie
+            if self.viewModel.config.customColor != .clear {
+                self.viewModel.config.selectedMagicPreset = nil
+                self.viewModel.config.selectedGradient = nil
+                self.viewModel.config.selectedSolidColor = nil
+                self.viewModel.config.backgroundImageURL = nil
+            }
+        }
+        
+        colorPanelObserver = observer
+        
+        // Nettoyer l'observer quand le panneau se ferme
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: colorPanel,
+            queue: .main
+        ) { _ in
+            if let observer = self.colorPanelObserver {
+                NotificationCenter.default.removeObserver(observer)
+                self.colorPanelObserver = nil
+            }
+        }
+        
+        colorPanel.orderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+    
     // MARK: - Color Picker Grid
     private var colorPickerGrid: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 30), spacing: 6)], spacing: 6) {
+        HStack(spacing: 10) {
+            // 5 preset colors
             ForEach(MagicPreset.presets) { preset in
-                let isSelected = viewModel.config.selectedMagicPreset?.id == preset.id
+                let isSelected = viewModel.config.selectedMagicPreset?.id == preset.id && viewModel.config.customColor == .clear
                 Button {
                     viewModel.config.selectedMagicPreset = preset
                     viewModel.config.selectedGradient = nil
                     viewModel.config.selectedSolidColor = nil
                     viewModel.config.backgroundImageURL = nil
+                    viewModel.config.customColor = .clear // Reset custom color
                 } label: {
                     Circle()
-                        .fill(LinearGradient(colors: preset.colors, startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .frame(width: 28, height: 28)
+                        .fill(preset.colors.first ?? .white)
+                        .frame(width: 32, height: 32)
                         .overlay(
                             Circle()
-                                .strokeBorder(isSelected ? .white : .clear, lineWidth: 2)
+                                .strokeBorder(isSelected ? .white : .white.opacity(0.2), lineWidth: isSelected ? 2.5 : 1)
                         )
-                        .scaleEffect(isSelected ? 1.1 : 1.0)
-                        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
                 }
                 .buttonStyle(.plain)
             }
+            
+            // Custom color picker (rainbow circle with gradient)
+            Button {
+                // Ouvrir le sélecteur de couleur macOS natif
+                openColorPanel()
+            } label: {
+                ZStack {
+                    // Dégradé arc-en-ciel circulaire
+                    Circle()
+                        .fill(
+                            AngularGradient(
+                                stops: [
+                                    .init(color: .red, location: 0.0),
+                                    .init(color: .yellow, location: 0.17),
+                                    .init(color: .green, location: 0.33),
+                                    .init(color: .cyan, location: 0.5),
+                                    .init(color: .blue, location: 0.67),
+                                    .init(color: .purple, location: 0.83),
+                                    .init(color: .red, location: 1.0)
+                                ],
+                                center: .center
+                            )
+                        )
+                        .frame(width: 32, height: 32)
+                    
+                    // Indicateur si une couleur personnalisée est sélectionnée
+                    if viewModel.config.customColor != .clear {
+                        Circle()
+                            .fill(viewModel.config.customColor)
+                            .frame(width: 24, height: 24)
+                            .overlay(
+                                Circle()
+                                    .strokeBorder(.white, lineWidth: 2)
+                            )
+                    }
+                }
+                .overlay(
+                    Circle()
+                        .strokeBorder(
+                            viewModel.config.customColor != .clear ? .white : .white.opacity(0.2),
+                            lineWidth: viewModel.config.customColor != .clear ? 2.5 : 1
+                        )
+                )
+            }
+            .buttonStyle(.plain)
         }
     }
     
@@ -619,15 +728,14 @@ struct ScreenshotEditorView: View {
                 }
                 .frame(maxWidth: .infinity, minHeight: 50)
             } else {
-                Text("wallpapers.count \(viewModel.wallpaperImages.count)")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
-                
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 50), spacing: 6)], spacing: 6) {
-                    ForEach(viewModel.wallpaperImages, id: \.url) { item in
-                        wallpaperButton(item)
+                ScrollView {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 50), spacing: 6)], spacing: 6) {
+                        ForEach(viewModel.wallpaperImages, id: \.url) { item in
+                            wallpaperButton(item)
+                        }
                     }
                 }
+                .frame(maxHeight: 200) // Limiter la hauteur pour éviter une zone trop grande
             }
         }
     }
@@ -681,36 +789,34 @@ struct ScreenshotEditorView: View {
         let isSelected = viewModel.config.mockupStyle == style
         return Button {
             viewModel.config.mockupStyle = style
+            // Réinitialiser les rotations 3D si on sélectionne glassEffect
+            if style == .glassEffect {
+                viewModel.config.rotationX = 0
+                viewModel.config.rotationY = 0
+            }
         } label: {
             VStack(spacing: 4) {
-                // Preview with fake screenshot inside
+                // Preview avec un mini screenshot
                 ZStack {
-                    // Background gradient/style
+                    // Background
                     RoundedRectangle(cornerRadius: 6)
-                        .fill(style.gradient)
+                        .fill(Color.gray.opacity(0.2))
                     
-                    // Fake screenshot preview (white rounded rectangle)
+                    // Fake screenshot preview
                     RoundedRectangle(cornerRadius: 3)
                         .fill(Color.white.opacity(0.9))
-                        .padding(6)
-                        .overlay(
-                            // Fake content lines
-                            VStack(spacing: 2) {
-                                RoundedRectangle(cornerRadius: 1)
-                                    .fill(Color.gray.opacity(0.3))
-                                    .frame(height: 2)
-                                RoundedRectangle(cornerRadius: 1)
-                                    .fill(Color.gray.opacity(0.2))
-                                    .frame(height: 2)
+                        .padding(style == .defaultStyle ? 4 : 8)
+                        .background {
+                            if style == .glassEffect {
+                                RoundedRectangle(cornerRadius: 4)
+                                    .fill(.ultraThinMaterial)
+                                    .padding(4)
+                            } else if style == .border {
+                                RoundedRectangle(cornerRadius: 4)
+                                    .fill(Color.gray.opacity(0.5))
+                                    .padding(4)
                             }
-                            .padding(8)
-                        )
-                    
-                    // Border for outline/border styles
-                    if style == .outline || style == .border {
-                        RoundedRectangle(cornerRadius: 6)
-                            .strokeBorder(style == .outline ? .white.opacity(0.5) : .gray.opacity(0.5), lineWidth: style == .outline ? 1 : 2)
-                    }
+                        }
                 }
                 .frame(height: 38)
                 .overlay(
@@ -945,6 +1051,7 @@ struct SliderWithDefaultCGFloat: View {
         }
     }
 }
+
 
 
 

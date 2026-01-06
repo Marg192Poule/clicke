@@ -3,6 +3,240 @@ import AppKit
 import AVFoundation
 internal import Combine
 
+// MARK: - Global Wallpaper Cache
+/// Cache singleton pour éviter de recharger les wallpapers à chaque ouverture de l'éditeur
+final class WallpaperCache {
+    static let shared = WallpaperCache()
+    
+    private(set) var wallpapers: [(url: URL, image: NSImage)] = []
+    private(set) var isLoaded = false
+    private var isLoading = false
+    private var loadCallbacks: [() -> Void] = []
+    
+    private init() {}
+    
+    /// Charge les wallpapers une seule fois, appelle le callback quand c'est prêt
+    func loadIfNeeded(completion: @escaping ([(url: URL, image: NSImage)]) -> Void) {
+        // Déjà chargé, retourner immédiatement
+        if isLoaded {
+            completion(wallpapers)
+            return
+        }
+        
+        // Chargement en cours, ajouter le callback à la liste
+        if isLoading {
+            loadCallbacks.append { [weak self] in
+                completion(self?.wallpapers ?? [])
+            }
+            return
+        }
+        
+        // Démarrer le chargement
+        isLoading = true
+        loadCallbacks.append { [weak self] in
+            completion(self?.wallpapers ?? [])
+        }
+        
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            
+            let loaded = self.loadAllWallpapers()
+            
+            DispatchQueue.main.async {
+                self.wallpapers = loaded
+                self.isLoaded = true
+                self.isLoading = false
+                
+                // Appeler tous les callbacks en attente
+                for callback in self.loadCallbacks {
+                    callback()
+                }
+                self.loadCallbacks.removeAll()
+            }
+        }
+    }
+    
+    /// Ajoute un wallpaper custom au début du cache
+    func addCustomWallpaper(url: URL, image: NSImage) {
+        // Éviter les doublons
+        if !wallpapers.contains(where: { $0.url == url }) {
+            wallpapers.insert((url, image), at: 0)
+        }
+    }
+    
+    /// Force le rechargement du cache
+    func invalidate() {
+        wallpapers.removeAll()
+        isLoaded = false
+    }
+    
+    // MARK: - Private Loading Logic
+    private func loadAllWallpapers() -> [(url: URL, image: NSImage)] {
+        var allFiles: [(url: URL, size: Int, isVideo: Bool, category: String)] = []
+        let fm = FileManager.default
+        let imageExtensions = ["jpg", "jpeg", "png", "heic", "heif", "tiff", "webp"]
+        let videoExtensions = ["mov", "mp4"]
+        
+        // Get current desktop wallpaper via NSWorkspace
+        var currentWallpaperURLs: [URL] = []
+        for screen in NSScreen.screens {
+            if let wallpaperURL = NSWorkspace.shared.desktopImageURL(for: screen) {
+                currentWallpaperURLs.append(wallpaperURL)
+            }
+        }
+        
+        // Add current wallpapers first
+        for wallpaperURL in currentWallpaperURLs {
+            if let attrs = try? fm.attributesOfItem(atPath: wallpaperURL.path),
+               let size = attrs[.size] as? Int {
+                let ext = wallpaperURL.pathExtension.lowercased()
+                let isVideo = videoExtensions.contains(ext)
+                allFiles.append((wallpaperURL, size, isVideo, "Current Wallpaper"))
+            }
+        }
+        
+        // All macOS wallpaper locations
+        let homeDir = fm.homeDirectoryForCurrentUser.path
+        let wallpaperPaths = [
+            "\(homeDir)/Library/Application Support/com.apple.wallpaper/aerials/videos",
+            "\(homeDir)/Library/Desktop Pictures",
+            "\(homeDir)/Pictures",
+            "/System/Library/Desktop Pictures",
+            "/Library/Desktop Pictures",
+            "/System/Library/ExtensionKit/Extensions/NeptuneOneWallpaper.appex/Contents/Resources",
+            "/System/Library/AssetsV2/com_apple_MobileAsset_DesktopPicture",
+            "/Library/Application Support/com.apple.idleassetsd/Customer/4KSDR240FPS"
+        ]
+        
+        for basePath in wallpaperPaths {
+            guard fm.fileExists(atPath: basePath) else { continue }
+            let baseURL = URL(fileURLWithPath: basePath)
+            
+            if let enumerator = fm.enumerator(
+                at: baseURL,
+                includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey, .isDirectoryKey],
+                options: []
+            ) {
+                for case let fileURL as URL in enumerator {
+                    let path = fileURL.path
+                    let ext = fileURL.pathExtension.lowercased()
+                    
+                    // Skip thumbnails, low-quality, and system files
+                    if path.contains("/.thumbnails/") { continue }
+                    if path.contains("Thumbnail") { continue }
+                    if path.contains("/Solid Colors/") { continue }
+                    if path.contains("@2x") { continue }
+                    if path.contains("Portrait") { continue }
+                    if path.contains(".DS_Store") { continue }
+                    if path.contains("Photo Booth") { continue }
+                    if path.contains("Screenshots") { continue }
+                    
+                    let isImage = imageExtensions.contains(ext)
+                    let isVideo = videoExtensions.contains(ext)
+                    
+                    guard isImage || isVideo else { continue }
+                    if currentWallpaperURLs.contains(fileURL) { continue }
+                    
+                    if let attrs = try? fm.attributesOfItem(atPath: path),
+                       let size = attrs[.size] as? Int {
+                        let minSize = basePath.contains(homeDir) ? 50_000 : 100_000
+                        if (isImage && size > minSize) || isVideo {
+                            allFiles.append((fileURL, size, isVideo, ""))
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Remove duplicates
+        var seen = Set<String>()
+        allFiles = allFiles.filter { item in
+            let name = item.url.lastPathComponent
+            if seen.contains(name) { return false }
+            seen.insert(name)
+            return true
+        }
+        
+        // Sort: videos first, then by size
+        allFiles.sort {
+            if $0.isVideo != $1.isVideo { return $0.isVideo }
+            return $0.size > $1.size
+        }
+        
+        // Load thumbnails
+        var loaded: [(URL, NSImage)] = []
+        for item in allFiles {
+            var img: NSImage?
+            
+            if item.isVideo {
+                img = extractFrameFromVideo(url: item.url)
+            } else {
+                img = loadImageFromFile(url: item.url)
+            }
+            
+            if let image = img {
+                let thumb = image.resizedProportionally(maxSize: NSSize(width: 400, height: 300))
+                loaded.append((item.url, thumb ?? image))
+            }
+        }
+        
+        return loaded
+    }
+    
+    private func loadImageFromFile(url: URL) -> NSImage? {
+        let ext = url.pathExtension.lowercased()
+        
+        if ext == "heic" || ext == "heif" {
+            guard let ciImage = CIImage(contentsOf: url) else { return nil }
+            let context = CIContext()
+            guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else { return nil }
+            return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+        }
+        
+        return NSImage(contentsOf: url)
+    }
+    
+    private func extractFrameFromVideo(url: URL) -> NSImage? {
+        let asset = AVURLAsset(url: url)
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        generator.requestedTimeToleranceAfter = CMTime.zero
+        generator.requestedTimeToleranceBefore = CMTime.zero
+        
+        let time = CMTime(seconds: 1, preferredTimescale: 600)
+        
+        let semaphore = DispatchSemaphore(value: 0)
+        var resultImage: NSImage? = nil
+        
+        generator.generateCGImageAsynchronously(for: time) { cgImage, actualTime, error in
+            if let cgImage = cgImage {
+                resultImage = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+            }
+            semaphore.signal()
+        }
+        
+        semaphore.wait()
+        
+        if let image = resultImage {
+            return image
+        }
+        
+        // Try at 0 seconds
+        let semaphore2 = DispatchSemaphore(value: 0)
+        resultImage = nil
+        
+        generator.generateCGImageAsynchronously(for: .zero) { cgImage, actualTime, error in
+            if let cgImage = cgImage {
+                resultImage = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+            }
+            semaphore2.signal()
+        }
+        
+        semaphore2.wait()
+        return resultImage
+    }
+}
+
 /// ViewModel pour l'éditeur de screenshots - contient toute la logique métier
 class ScreenshotEditorViewModel: ObservableObject {
     // MARK: - Published Properties (État observable)
@@ -105,155 +339,14 @@ class ScreenshotEditorViewModel: ObservableObject {
     
     // MARK: - Load Wallpapers
     func loadWallpapers() {
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        // Utiliser le cache global pour éviter de recharger à chaque fois
+        WallpaperCache.shared.loadIfNeeded { [weak self] cachedWallpapers in
             guard let self = self else { return }
             
-            var allFiles: [(url: URL, size: Int, isVideo: Bool, category: String)] = []
-            let fm = FileManager.default
-            let imageExtensions = ["jpg", "jpeg", "png", "heic", "heif", "tiff", "webp"]
-            let videoExtensions = ["mov", "mp4"]
-            
-            // APPROACH 1: Get current desktop wallpaper via NSWorkspace (most reliable)
-            var currentWallpaperURLs: [URL] = []
-            for screen in NSScreen.screens {
-                if let wallpaperURL = NSWorkspace.shared.desktopImageURL(for: screen) {
-                    currentWallpaperURLs.append(wallpaperURL)
-                }
-            }
-            
-            // Add current wallpapers first (priority)
-            for wallpaperURL in currentWallpaperURLs {
-                if let attrs = try? fm.attributesOfItem(atPath: wallpaperURL.path),
-                   let size = attrs[.size] as? Int {
-                    let ext = wallpaperURL.pathExtension.lowercased()
-                    let isVideo = videoExtensions.contains(ext)
-                    allFiles.append((wallpaperURL, size, isVideo, "Current Wallpaper"))
-                }
-            }
-            
-            // APPROACH 2: All macOS wallpaper locations (system + user)
-            let homeDir = fm.homeDirectoryForCurrentUser.path
-            let wallpaperPaths = [
-                // User's downloaded aerial wallpapers (Tahoe 26 dynamic wallpapers cache)
-                "\(homeDir)/Library/Application Support/com.apple.wallpaper/aerials/videos",
-                // User's personal wallpapers
-                "\(homeDir)/Library/Desktop Pictures",
-                "\(homeDir)/Pictures",
-                // System wallpapers
-                "/System/Library/Desktop Pictures",
-                "/Library/Desktop Pictures",
-                // macOS Tahoe 26 wallpapers (NeptuneOneWallpaper extension)
-                "/System/Library/ExtensionKit/Extensions/NeptuneOneWallpaper.appex/Contents/Resources",
-                // Dynamic wallpapers assets
-                "/System/Library/AssetsV2/com_apple_MobileAsset_DesktopPicture",
-                "/Library/Application Support/com.apple.idleassetsd/Customer/4KSDR240FPS"
-            ]
-            
-            for basePath in wallpaperPaths {
-                guard fm.fileExists(atPath: basePath) else { continue }
-                let baseURL = URL(fileURLWithPath: basePath)
-                
-                // Determine category from base path
-                let baseCategory: String
-                if basePath.contains(homeDir) {
-                    baseCategory = "My Pictures"
-                } else {
-                    baseCategory = "System"
-                }
-                
-                // Enumerate including hidden directories
-                if let enumerator = fm.enumerator(
-                    at: baseURL,
-                    includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey, .isDirectoryKey],
-                    options: []
-                ) {
-                    for case let fileURL as URL in enumerator {
-                        let path = fileURL.path
-                        let ext = fileURL.pathExtension.lowercased()
-                        
-                        // Skip thumbnails, low-quality, and system files
-                        if path.contains("/.thumbnails/") { continue }
-                        if path.contains("Thumbnail") { continue }
-                        if path.contains("/Solid Colors/") { continue }
-                        if path.contains("@2x") { continue }
-                        if path.contains("Portrait") { continue }
-                        if path.contains(".DS_Store") { continue }
-                        if path.contains("Photo Booth") { continue }
-                        if path.contains("Screenshots") { continue }
-                        
-                        let isImage = imageExtensions.contains(ext)
-                        let isVideo = videoExtensions.contains(ext)
-                        
-                        guard isImage || isVideo else { continue }
-                        
-                        // Skip if already added as current wallpaper
-                        if currentWallpaperURLs.contains(fileURL) { continue }
-                        
-                        // Determine subcategory from path
-                        var category = baseCategory
-                        if path.contains("Tahoe") || path.contains("tahoe") || path.contains("Neptune") { category = "Tahoe" }
-                        else if path.contains("Sequoia") || path.contains("sequoia") { category = "Sequoia" }
-                        else if path.contains("Sonoma") || path.contains("sonoma") { category = "Sonoma" }
-                        else if path.contains("Ventura") || path.contains("ventura") { category = "Ventura" }
-                        else if path.contains("Monterey") || path.contains("monterey") { category = "Monterey" }
-                        else if path.contains("Big Sur") || path.contains("bigsur") { category = "Big Sur" }
-                        else if path.contains("Catalina") || path.contains("catalina") { category = "Catalina" }
-                        else if path.contains("Mojave") || path.contains("mojave") { category = "Mojave" }
-                        
-                        // Get file size - quality filter
-                        if let attrs = try? fm.attributesOfItem(atPath: path),
-                           let size = attrs[.size] as? Int {
-                            // User images: > 50KB, System: > 100KB
-                            let minSize = basePath.contains(homeDir) ? 50_000 : 100_000
-                            if (isImage && size > minSize) || isVideo {
-                                allFiles.append((fileURL, size, isVideo, category))
-                            }
-                        }
-                    }
-                }
-            }
-            
-            // Remove duplicates based on filename
-            var seen = Set<String>()
-            allFiles = allFiles.filter { item in
-                let name = item.url.lastPathComponent
-                if seen.contains(name) { return false }
-                seen.insert(name)
-                return true
-            }
-            
-            // Sort: videos first (dynamic wallpapers), then by size (highest quality first)
-            allFiles.sort {
-                if $0.isVideo != $1.isVideo { return $0.isVideo }
-                return $0.size > $1.size
-            }
-            
-            // Load all items (no limit)
-            var loaded: [(URL, NSImage)] = []
-            for item in allFiles {
-                var img: NSImage?
-                
-                if item.isVideo {
-                    // Extract frame from video
-                    img = self.extractFrameFromVideo(url: item.url)
-                } else {
-                    // Load image, convert HEIC to standard format if needed
-                    img = self.loadImageFromFile(url: item.url)
-                }
-                
-                if let image = img {
-                    // Create higher quality thumbnail for display
-                    let thumb = image.resizedProportionally(maxSize: NSSize(width: 400, height: 300))
-                    loaded.append((item.url, thumb ?? image))
-                }
-            }
-            
-            DispatchQueue.main.async {
-                // Ajouter les nouveaux wallpapers sans écraser ceux déjà chargés
-                let existingURLs = Set(self.wallpaperImages.map { $0.url })
-                let newWallpapers = loaded.filter { !existingURLs.contains($0.0) }
-                self.wallpaperImages.append(contentsOf: newWallpapers)
-            }
+            // Ajouter les wallpapers du cache sans écraser ceux déjà présents
+            let existingURLs = Set(self.wallpaperImages.map { $0.url })
+            let newWallpapers = cachedWallpapers.filter { !existingURLs.contains($0.url) }
+            self.wallpaperImages.append(contentsOf: newWallpapers)
         }
     }
     
@@ -268,18 +361,20 @@ class ScreenshotEditorViewModel: ObservableObject {
         
         if panel.runModal() == .OK, let url = panel.url {
             if let image = loadImageFromFile(url: url) {
-                let thumb = image.resizedProportionally(maxSize: NSSize(width: 400, height: 300))
+                let thumb = image.resizedProportionally(maxSize: NSSize(width: 400, height: 300)) ?? image
                 
-                DispatchQueue.main.async {
-                    // Add to beginning of list
-                    self.wallpaperImages.insert((url, thumb ?? image), at: 0)
-                    // Select it
-                    self.selectedWallpaperURL = url
-                    self.config.backgroundImageURL = url
-                    self.config.selectedMagicPreset = nil
-                    self.config.selectedGradient = nil
-                    self.config.selectedSolidColor = nil
-                }
+                // Add to beginning of list
+                self.wallpaperImages.insert((url, thumb), at: 0)
+                
+                // Aussi ajouter au cache global pour les futures sessions
+                WallpaperCache.shared.addCustomWallpaper(url: url, image: thumb)
+                
+                // Select it
+                self.selectedWallpaperURL = url
+                self.config.backgroundImageURL = url
+                self.config.selectedMagicPreset = nil
+                self.config.selectedGradient = nil
+                self.config.selectedSolidColor = nil
             }
         }
     }
