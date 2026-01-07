@@ -45,7 +45,6 @@ playground.xcworkspace
 Packages/
 Package.pins
 Package.resolved
-*.xcodeproj
 
 ## CocoaPods
 Pods/
@@ -92,3 +91,7 @@ Thumbnails/
 ## Temporary files
 *.orig
 *~
+
+## Build scripts output
+build_output/
+dmg_temp/

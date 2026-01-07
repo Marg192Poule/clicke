@@ -1,19 +1,17 @@
-# Contributing to Clické
-
-Thank you for your interest in contributing to Clické! 🎉
+# Contributing to Clicke
 
 ## Ways to Contribute
 
-- 🐛 **Report bugs** — Open an issue describing the problem
-- 💡 **Suggest features** — Share your ideas for improvements
-- 📝 **Improve documentation** — Fix typos, add examples
-- 💻 **Submit code** — Fix bugs or implement new features
+- Report bugs by opening an issue
+- Suggest features
+- Improve documentation
+- Submit code via pull requests
 
 ## Development Setup
 
 ### Prerequisites
 
-- macOS 14.0 Sonoma or later (macOS 15+ for Liquid Glass effects)
+- macOS 14.0 or later
 - Xcode 16.0 or later
 - Git
 
@@ -29,39 +27,38 @@ Thank you for your interest in contributing to Clické! 🎉
 
 3. Open in Xcode:
    ```bash
-   open clické.xcodeproj
+   open clicke.xcodeproj
    ```
 
-4. Build and run (⌘R)
+4. Build and run with Command + R
 
 ## Code Guidelines
 
 ### Swift Style
 
-- Follow [Swift API Design Guidelines](https://swift.org/documentation/api-design-guidelines/)
+- Follow Swift API Design Guidelines
 - Use meaningful variable and function names
-- Keep functions small and focused (single responsibility)
+- Keep functions small and focused
 - Add comments for complex logic
 
-### SwiftUI Best Practices
+### SwiftUI
 
-- Prefer `@State` for local view state
+- Use `@State` for local view state
 - Use `@StateObject` for owned observable objects
 - Use `@ObservedObject` for passed-in observable objects
 - Extract reusable views into separate structs
-- Use `#Preview` for SwiftUI previews
 
 ### Project Structure
 
 ```
-clické/
-├── Coordinator/     # App lifecycle, windows
-├── Extensions/      # Swift extensions
-├── Features/        # Feature modules (Editor, Settings)
-├── Managers/        # Singleton managers
-├── Models/          # Data models
-├── View/            # Main views
-└── ViewModel/       # View models
+clicke/
+├── Coordinator/     App lifecycle, windows
+├── Extensions/      Swift extensions
+├── Features/        Feature modules (Editor, Settings)
+├── Managers/        Singleton managers
+├── Models/          Data models
+├── View/            Main views
+└── ViewModel/       View models
 ```
 
 ### Commit Messages
@@ -76,81 +73,68 @@ refactor: Extract noise generation to separate struct
 ```
 
 Prefixes:
-- `feat:` — New feature
-- `fix:` — Bug fix
-- `docs:` — Documentation
-- `refactor:` — Code refactoring
-- `test:` — Tests
-- `chore:` — Maintenance
+- `feat:` New feature
+- `fix:` Bug fix
+- `docs:` Documentation
+- `refactor:` Code refactoring
+- `test:` Tests
+- `chore:` Maintenance
 
 ## Pull Request Process
 
-1. **Create a branch** for your feature:
+1. Create a branch for your feature:
    ```bash
-   git checkout -b feature/amazing-feature
+   git checkout -b feature/your-feature
    ```
 
-2. **Make your changes** and test thoroughly
+2. Make your changes and test thoroughly
 
-3. **Commit your changes**:
+3. Commit your changes:
    ```bash
-   git commit -m "feat: Add amazing feature"
+   git commit -m "feat: Add your feature"
    ```
 
-4. **Push to your fork**:
+4. Push to your fork:
    ```bash
-   git push origin feature/amazing-feature
+   git push origin feature/your-feature
    ```
 
-5. **Open a Pull Request** on GitHub
+5. Open a Pull Request on GitHub
 
 ### PR Checklist
 
-- [ ] Code follows project style guidelines
-- [ ] App builds without warnings
-- [ ] Feature has been tested on macOS
-- [ ] Documentation updated if needed
-- [ ] Commit messages are clear
+- Code follows project style guidelines
+- App builds without warnings
+- Feature has been tested on macOS
+- Documentation updated if needed
+- Commit messages are clear
 
 ## Reporting Issues
 
 ### Bug Reports
 
-When reporting bugs, please include:
-
+Include:
 - macOS version
-- Xcode version (if building from source)
 - Steps to reproduce
-- Expected behavior
-- Actual behavior
+- Expected vs actual behavior
 - Screenshots if applicable
 
 ### Feature Requests
 
-When suggesting features:
-
-- Describe the use case
-- Explain the expected behavior
-- Include mockups if possible
+Include:
+- Use case description
+- Expected behavior
+- Mockups if possible
 
 ## Testing
 
 Before submitting a PR:
 
-1. Build the app (⌘B)
-2. Run the app (⌘R)
+1. Build the app (Command + B)
+2. Run the app (Command + R)
 3. Test the specific feature you changed
-4. Test related features to ensure no regressions
-5. Test on both Intel and Apple Silicon if possible
+4. Test related features for regressions
 
 ## License
 
 By contributing, you agree that your contributions will be licensed under the MIT License.
-
-## Questions?
-
-Feel free to open an issue for any questions about contributing!
-
----
-
-Thank you for helping make Clické better! 🙌
