@@ -21,7 +21,9 @@ A macOS menu bar application for capturing and styling screenshots.
 
 ## Installation
 
-Download the latest `.dmg` from the [clické.com](https://clické.com) page, then drag the app to your Applications folder.
+Download the latest `.dmg` :
+- from the [clické.com](https://clické.com) website, then drag the app to your Applications folder.
+- from the [Release](https://github.com/nathbns/clicke/releases/) page, then drag the app to your Applications folder.
 
 The app is not notarized (no Apple Developer subscription). On first launch, macOS will block it. To open:
 
