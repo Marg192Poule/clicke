@@ -17,11 +17,13 @@ struct ScreenshotPreviewCanvas: View {
     var body: some View {
         ZStack {
             // Background with unified blur (except transparent)
+            // Use drawingGroup to rasterize to GPU texture - prevents re-rendering during 3D rotations
             if config.backgroundType == .transparent {
                 backgroundView
             } else {
                 backgroundView
-                    .blur(radius: config.gradientConfig.blurAmount) // Unified blur for all backgrounds
+                    .blur(radius: config.gradientConfig.blurAmount)
+                    .drawingGroup(opaque: true, colorMode: .linear) // Rasterize to GPU texture for smooth 3D rotations
                 
                 // Noise overlay as separate layer (not affected by blur)
                 // Skip noise texture during export rendering (Metal shaders don't work with ImageRenderer)
@@ -59,6 +61,12 @@ struct ScreenshotPreviewCanvas: View {
                 axis: (x: 0, y: 1, z: 0),
                 perspective: (config.rotationX != 0 || config.rotationY != 0) ? 1.0 : 0
             )
+            .animation(.spring(response: 0.35, dampingFraction: 0.8), value: config.rotation)
+            .animation(.spring(response: 0.35, dampingFraction: 0.8), value: config.rotationX)
+            .animation(.spring(response: 0.35, dampingFraction: 0.8), value: config.rotationY)
+            .animation(.easeOut(duration: 0.2), value: config.scale)
+            .animation(.easeOut(duration: 0.15), value: config.imageScale)
+            .animation(.easeOut(duration: 0.2), value: config.borderRadius)
             .offset(CGSize(width: config.screenshotOffset.width + dragOffset.width, height: config.screenshotOffset.height + dragOffset.height))
             .contentShape(Rectangle())
             .highPriorityGesture(
@@ -298,48 +306,40 @@ struct ScreenshotPreviewCanvas: View {
                 colorBackground
             }
         }
-        // Color adjustments: Use SwiftUI native modifiers during export (Metal shaders don't work with ImageRenderer)
-        .saturation(isRendering ? config.gradientConfig.saturation / 100 : 1.0)
-        .brightness(isRendering ? (config.gradientConfig.brightness - 100) / 100 : 0.0)
-        .colorAdjustments(
-            saturation: isRendering ? 1.0 : config.gradientConfig.saturation / 100,
-            brightness: isRendering ? 0.0 : (config.gradientConfig.brightness - 100) / 100
-        )
-        .onChange(of: config.backgroundImageURL) { _, newURL in
+        // Color adjustments: Use SwiftUI native modifiers for images (faster than Metal shaders for large images)
+        // Native modifiers are GPU-optimized and cached by SwiftUI
+        .saturation(config.gradientConfig.saturation / 100)
+        .brightness((config.gradientConfig.brightness - 100) / 100)
+        .onChange(of: config.backgroundImageURL?.absoluteString) { _, newValue in
             // Reset and load new image asynchronously
             loadedBackgroundImage = nil
-            if let newURL = newURL {
-                DispatchQueue.global(qos: .userInitiated).async {
-                    let videoExtensions = ["mov", "mp4"]
-                    let isVideo = videoExtensions.contains(newURL.pathExtension.lowercased())
-                    let loadedImage: NSImage?
-                    if isVideo {
-                        loadedImage = extractFrameFromVideo(url: newURL)
-                    } else {
-                        loadedImage = loadImageFromFile(url: newURL)
-                    }
-                    DispatchQueue.main.async {
-                        loadedBackgroundImage = loadedImage
-                    }
-                }
+            if let urlString = newValue, let newURL = URL(string: urlString) {
+                loadBackgroundImageAsync(from: newURL)
             }
         }
         .onAppear {
             // Load on appear if URL exists and image not loaded
             if let url = config.backgroundImageURL, loadedBackgroundImage == nil {
-                DispatchQueue.global(qos: .userInitiated).async {
-                    let videoExtensions = ["mov", "mp4"]
-                    let isVideo = videoExtensions.contains(url.pathExtension.lowercased())
-                    let loadedImage: NSImage?
-                    if isVideo {
-                        loadedImage = extractFrameFromVideo(url: url)
-                    } else {
-                        loadedImage = loadImageFromFile(url: url)
-                    }
-                    DispatchQueue.main.async {
-                        loadedBackgroundImage = loadedImage
-                    }
-                }
+                loadBackgroundImageAsync(from: url)
+            }
+        }
+    }
+    
+    /// Load and optimize background image asynchronously
+    private func loadBackgroundImageAsync(from url: URL) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let videoExtensions = ["mov", "mp4"]
+            let isVideo = videoExtensions.contains(url.pathExtension.lowercased())
+            let loadedImage: NSImage?
+            if isVideo {
+                loadedImage = extractFrameFromVideo(url: url)
+            } else {
+                loadedImage = loadImageFromFile(url: url)
+            }
+            // Downscale for preview performance (max 2K resolution)
+            let optimizedImage = loadedImage?.resizedForPreview(maxDimension: 2048)
+            DispatchQueue.main.async {
+                loadedBackgroundImage = optimizedImage ?? loadedImage
             }
         }
     }

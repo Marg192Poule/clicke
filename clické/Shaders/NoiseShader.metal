@@ -11,7 +11,8 @@ half4 noise(float2 position, half4 color, float intensity) {
     float value = fract(sin(dot(scaledPos, float2(12.9898, 78.233))) * 43758.5453);
     
     // Create grain: value ranges from -1 to +1, scaled by intensity
-    half grain = half(value * 2.0 - 1.0) * half(intensity) * 0.15;
+    // Increased multiplier from 0.15 to 0.35 for more visible grain
+    half grain = half(value * 2.0 - 1.0) * half(intensity) * 0.35;
     
     // Add grain to original color (overlay effect)
     half3 result = clamp(color.rgb + grain, 0.0h, 1.0h);
@@ -27,10 +28,11 @@ half4 noiseOverlay(float2 position, half4 color, float intensity) {
     // Generate noise value
     float value = fract(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453);
     
-    // Create subtle grain offset (-0.5 to +0.5 range, centered)
-    half grain = half(value - 0.5) * half(intensity) * 0.25h;
+    // Create stronger grain offset (-0.5 to +0.5 range, centered)
+    // Increased multiplier from 0.25 to 0.6 for more visible grain
+    half grain = half(value - 0.5) * half(intensity) * 0.6h;
     
-    // Mix with original color - adds/subtracts small amount
+    // Mix with original color - adds/subtracts amount
     half3 result = color.rgb + grain;
     
     return half4(clamp(result, 0.0h, 1.0h), color.a);
@@ -92,8 +94,9 @@ half4 noiseTexture(float2 position, half4 color, float intensity) {
     
     // Center at 0.5 and scale by intensity
     // At intensity=0: grain=0.5 (no effect with softLight)
-    // At intensity=1: grain ranges from ~0.3 to ~0.7
-    half grain = half(0.5 + (value - 0.5) * intensity * 0.4);
+    // At intensity=1: grain ranges from ~0.15 to ~0.85 (increased from 0.3-0.7)
+    // Increased multiplier from 0.4 to 0.7 for more visible grain
+    half grain = half(0.5 + (value - 0.5) * intensity * 0.7);
     
     // Full opacity - the grain value itself controls the effect
     return half4(grain, grain, grain, 1.0h);

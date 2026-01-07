@@ -261,7 +261,11 @@ struct ScreenshotEditorView: View {
             // Rotation Z (2D)
             LabeledContent("rotation") {
                 HStack(spacing: 4) {
-                    Button { viewModel.config.rotation -= 90 } label: {
+                    Button {
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                            viewModel.config.rotation -= 90
+                        }
+                    } label: {
                         Image(systemName: "rotate.left")
                     }
                     .buttonStyle(.bordered)
@@ -271,7 +275,11 @@ struct ScreenshotEditorView: View {
                         .foregroundStyle(.tertiary)
                         .frame(width: 36)
                     
-                    Button { viewModel.config.rotation += 90 } label: {
+                    Button {
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                            viewModel.config.rotation += 90
+                        }
+                    } label: {
                         Image(systemName: "rotate.right")
                     }
                     .buttonStyle(.bordered)
@@ -393,16 +401,8 @@ struct ScreenshotEditorView: View {
     // MARK: - Layout Section (Tab 2)
     @ViewBuilder
     private var layoutSectionContent: some View {
-        // Layout Controls
+        // Layout Controls - only scale, no padding
         Section("layout") {
-            LabeledContent("padding") {
-                SliderWithDefaultCGFloat(
-                    value: $viewModel.config.padding,
-                    range: 0...200,
-                    defaultValue: 80,
-                    showValue: true
-                )
-            }
             LabeledContent("scale") {
                 SliderWithDefaultCGFloat(
                     value: $viewModel.config.imageScale,
@@ -439,19 +439,17 @@ struct ScreenshotEditorView: View {
             }
         }
         
-        // Platform presets
+        // Platform presets - expanded by default
         Section {
-            DisclosureGroup {
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                    ForEach(SocialMediaPreset.groupedByPlatform.keys.sorted(), id: \.self) { platform in
-                        ForEach(SocialMediaPreset.groupedByPlatform[platform] ?? []) { preset in
-                            presetButton(preset)
-                        }
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                ForEach(SocialMediaPreset.groupedByPlatform.keys.sorted(), id: \.self) { platform in
+                    ForEach(SocialMediaPreset.groupedByPlatform[platform] ?? []) { preset in
+                        presetButton(preset)
                     }
                 }
-            } label: {
-                Label("social.presets", systemImage: "rectangle.3.group")
             }
+        } header: {
+            Label("social.presets", systemImage: "rectangle.3.group")
         }
     }
     
@@ -783,6 +781,7 @@ struct ScreenshotEditorView: View {
                 }
                 .id("canvas-\(viewModel.config.showMockup)-\(viewModel.config.mockupStyle.rawValue)")
                 .scaleEffect(viewModel.config.zoom / 100)
+                .animation(.easeOut(duration: 0.15), value: viewModel.config.zoom)
                 .position(
                     x: geo.size.width / 2 + 150 + viewModel.offset.width + viewModel.lastOffset.width,
                     y: geo.size.height / 2 + viewModel.offset.height + viewModel.lastOffset.height
@@ -995,7 +994,7 @@ struct SliderWithDefault: View {
                 }
                 .frame(height: 20)
                 
-                // Actual slider
+                // Actual slider with smooth interaction
                 if let step = step {
                     Slider(value: $value, in: range, step: step)
                 } else {
@@ -1009,6 +1008,8 @@ struct SliderWithDefault: View {
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(.tertiary)
                     .frame(width: unit.isEmpty ? 28 : 36, alignment: .trailing)
+                    .contentTransition(.numericText())
+                    .animation(.snappy(duration: 0.15), value: value)
             }
         }
     }
@@ -1050,7 +1051,7 @@ struct SliderWithDefaultCGFloat: View {
                 }
                 .frame(height: 20)
                 
-                // Actual slider
+                // Actual slider with smooth interaction
                 if let step = step {
                     Slider(value: $value, in: range, step: step)
                 } else {
@@ -1064,6 +1065,8 @@ struct SliderWithDefaultCGFloat: View {
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(.tertiary)
                     .frame(width: unit.isEmpty ? 28 : 36, alignment: .trailing)
+                    .contentTransition(.numericText())
+                    .animation(.snappy(duration: 0.15), value: value)
             }
         }
     }

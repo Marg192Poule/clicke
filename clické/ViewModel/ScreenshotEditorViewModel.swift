@@ -325,11 +325,15 @@ class ScreenshotEditorViewModel: ObservableObject {
             let totalHeight = self.originalImage.size.height + self.config.padding * 2
             
             let fitScale = min(availableWidth / totalWidth, availableHeight / totalHeight, 1.0)
-            self.config.zoom = fitScale * 100
             
-            // Center the image in the available space
-            self.offset = .zero
-            self.lastOffset = .zero
+            // Animate the zoom transition for smoother UX
+            withAnimation(.easeOut(duration: 0.25)) {
+                self.config.zoom = fitScale * 100
+                
+                // Center the image in the available space
+                self.offset = .zero
+                self.lastOffset = .zero
+            }
         }
     }
     
@@ -573,20 +577,26 @@ class ScreenshotEditorViewModel: ObservableObject {
     
     // MARK: - Zoom Actions
     func zoomIn() {
-        let newZoom = min(config.zoom * 1.2, 300)
-        config.zoom = newZoom
+        withAnimation(.easeOut(duration: 0.2)) {
+            let newZoom = min(config.zoom * 1.2, 300)
+            config.zoom = newZoom
+        }
     }
     
     func zoomOut() {
-        let newZoom = max(config.zoom / 1.2, 10)
-        config.zoom = newZoom
+        withAnimation(.easeOut(duration: 0.2)) {
+            let newZoom = max(config.zoom / 1.2, 10)
+            config.zoom = newZoom
+        }
     }
     
     // MARK: - Reset Actions
     func resetPosition() {
-        offset = .zero
-        lastOffset = .zero
-        config.rotation = 0
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+            offset = .zero
+            lastOffset = .zero
+            config.rotation = 0
+        }
     }
     
     func resetScreenshotOffset() {
