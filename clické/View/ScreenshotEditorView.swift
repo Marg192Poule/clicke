@@ -13,6 +13,11 @@ struct ScreenshotEditorView: View {
     @State private var isDraggingScreenshot: Bool = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var colorPanelObserver: NSObjectProtocol?
+    @State private var colorPanelCloseObserver: NSObjectProtocol?
+    
+    // Cached shareable image state
+    @State private var cachedShareableImage: Image?
+    @State private var lastRenderHash: Int = 0
     
     init(originalImage: NSImage, onCopy: @escaping (NSImage) -> Void, onClose: @escaping () -> Void) {
         self.originalImage = originalImage
@@ -23,67 +28,13 @@ struct ScreenshotEditorView: View {
     
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            // Sidebar with inspector controls
             inspectorContent
                 .frame(width: 300)
                 .toolbar(removing: .sidebarToggle)
         } detail: {
-            // Main canvas
             canvasView
                 .toolbar {
-                    ToolbarItem(placement: .navigation) {
-                        Button {
-                            withAnimation {
-                                columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
-                            }
-                        } label: {
-                            Image(systemName: "sidebar.left")
-                        }
-                    }
-                    
-                    ToolbarItem(placement: .automatic) {
-                        Button {
-                            viewModel.zoomIn()
-                        } label: {
-                            Image(systemName: "plus.magnifyingglass")
-                        }
-                        .help("Zoom In")
-                    }
-                    
-                    ToolbarItem(placement: .automatic) {
-                        Button {
-                            viewModel.zoomOut()
-                        } label: {
-                            Image(systemName: "minus.magnifyingglass")
-                        }
-                        .help("Zoom Out")
-                    }
-                    
-                    ToolbarItem(placement: .automatic) {
-                        Button {
-                            viewModel.resetPosition()
-                        } label: {
-                            Image(systemName: "arrow.counterclockwise")
-                        }
-                        .help("Reset Disposition")
-                    }
-                    
-                    ToolbarItem(placement: .automatic) {
-                        Spacer()
-                    }
-                    
-                    ToolbarItem(placement: .automatic) {
-                        ShareLink(item: viewModel.getShareableImage(), preview: SharePreview("Screenshot", image: viewModel.getShareableImage())) {
-                            Label("Share", systemImage: "square.and.arrow.up")
-                                .labelStyle(.iconOnly)
-                        }
-                    }
-                    
-                    ToolbarItem(placement: .automatic) {
-                        Button("Copy", systemImage: "doc.on.doc") {
-                            if let img = viewModel.copyAction() { onCopy(img) }
-                        }
-                    }
+                    toolbarContent
                 }
         }
         .toolbar(removing: .title)
@@ -92,7 +43,9 @@ struct ScreenshotEditorView: View {
             viewModel.loadWallpapers()
             viewModel.calculateFitZoom()
         }
-        // Toolbar action handlers (for keyboard shortcuts)
+        .onDisappear {
+            cleanupObservers()
+        }
         .onReceive(NotificationCenter.default.publisher(for: ScreenshotEditorWindow.copyNotification)) { _ in
             if let img = viewModel.copyAction() { onCopy(img) }
         }
@@ -108,24 +61,103 @@ struct ScreenshotEditorView: View {
         .onReceive(NotificationCenter.default.publisher(for: ScreenshotEditorWindow.zoomActualNotification)) { _ in
             viewModel.config.zoom = 100
         }
+        .onChange(of: viewModel.config.renderHash) { _, newHash in
+            // Invalider le cache de l'image partageable quand la config change
+            if lastRenderHash != newHash {
+                cachedShareableImage = nil
+                lastRenderHash = newHash
+            }
+        }
     }
     
-    // MARK: - Inspector Content (Sidebar)
+    // MARK: - Cleanup
+    private func cleanupObservers() {
+        if let observer = colorPanelObserver {
+            NotificationCenter.default.removeObserver(observer)
+            colorPanelObserver = nil
+        }
+        if let observer = colorPanelCloseObserver {
+            NotificationCenter.default.removeObserver(observer)
+            colorPanelCloseObserver = nil
+        }
+    }
+    
+    // MARK: - Toolbar Content
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .navigation) {
+            Button {
+                withAnimation {
+                    columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
+                }
+            } label: {
+                Image(systemName: "sidebar.left")
+            }
+        }
+        
+        ToolbarItem(placement: .automatic) {
+            Button(action: viewModel.zoomIn) {
+                Image(systemName: "plus.magnifyingglass")
+            }
+            .help("Zoom In")
+        }
+        
+        ToolbarItem(placement: .automatic) {
+            Button(action: viewModel.zoomOut) {
+                Image(systemName: "minus.magnifyingglass")
+            }
+            .help("Zoom Out")
+        }
+        
+        ToolbarItem(placement: .automatic) {
+            Button(action: viewModel.resetPosition) {
+                Image(systemName: "arrow.counterclockwise")
+            }
+            .help("Reset Disposition")
+        }
+        
+        ToolbarItem(placement: .automatic) {
+            Spacer()
+        }
+        
+        ToolbarItem(placement: .automatic) {
+            // Use cached shareable image
+            ShareLink(item: shareableImage, preview: SharePreview("Screenshot", image: shareableImage)) {
+                Label("Share", systemImage: "square.and.arrow.up")
+                    .labelStyle(.iconOnly)
+            }
+        }
+        
+        ToolbarItem(placement: .automatic) {
+            Button("Copy", systemImage: "doc.on.doc") {
+                if let img = viewModel.copyAction() { onCopy(img) }
+            }
+        }
+    }
+    
+    // Cached shareable image
+    private var shareableImage: Image {
+        if let cached = cachedShareableImage {
+            return cached
+        }
+        let image = viewModel.getShareableImage()
+        DispatchQueue.main.async {
+            cachedShareableImage = image
+        }
+        return image
+    }
+    
+    // MARK: - Inspector Content
     private var inspectorContent: some View {
         VStack(spacing: 0) {
-            // Navigation toolbar at top
             navigationToolbar
             
             Form {
                 switch selectedTab {
-                case 0: 
-                    appearanceSectionContent
-                case 1: 
-                    backgroundSectionContent
-                case 2: 
-                    layoutSectionContent
-                default: 
-                    appearanceSectionContent
+                case 0: appearanceSectionContent
+                case 1: backgroundSectionContent
+                case 2: layoutSectionContent
+                default: appearanceSectionContent
                 }
             }
             .formStyle(.grouped)
@@ -138,22 +170,15 @@ struct ScreenshotEditorView: View {
     private var navigationToolbar: some View {
         HStack(spacing: 0) {
             toolbarButton(icon: "paintbrush", tag: 0, label: "Appearance")
-            
             toolbarDivider
-            
             toolbarButton(icon: "photo", tag: 1, label: "Background")
-            
             toolbarDivider
-            
             toolbarButton(icon: "square.on.square", tag: 2, label: "Layout")
         }
         .padding(.horizontal, 4)
         .padding(.vertical, 2)
         .frame(height: 32)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(Color(nsColor: .quaternarySystemFill))
-        )
+        .background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .quaternarySystemFill)))
         .padding(.horizontal, 8)
         .padding(.top, 8)
         .padding(.bottom, 8)
@@ -181,7 +206,6 @@ struct ScreenshotEditorView: View {
                 }
                 Image(systemName: icon)
                     .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
-                    .symbolVariant(.none)
                     .foregroundStyle(isSelected ? .white : .white.opacity(0.7))
             }
             .frame(width: 24, height: 24)
@@ -191,11 +215,9 @@ struct ScreenshotEditorView: View {
         .help(label)
     }
     
-    
-    // MARK: - Appearance Section (Tab 0)
+    // MARK: - Appearance Section
     @ViewBuilder
     private var appearanceSectionContent: some View {
-        // Mockup Style
         Section("mockup") {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 80), spacing: 8)], spacing: 8) {
                 ForEach(MockupStyle.allCases) { style in
@@ -205,7 +227,7 @@ struct ScreenshotEditorView: View {
             
             if viewModel.config.showMockup && viewModel.config.mockupStyle != .defaultStyle {
                 LabeledContent("size") {
-                    SliderWithDefaultCGFloat(
+                    OptimizedSlider(
                         value: $viewModel.config.mockupBorderSize,
                         range: 0...10,
                         defaultValue: 3,
@@ -215,14 +237,12 @@ struct ScreenshotEditorView: View {
                     )
                 }
                 
-                // Color picker pour le border
                 if viewModel.config.mockupStyle == .border {
                     ColorPicker("color", selection: $viewModel.config.borderColor, supportsOpacity: false)
                 }
             }
         }
         
-        // Corner Radius
         Section("corners") {
             Picker("Style", selection: $viewModel.config.borderStyle) {
                 ForEach(BorderStyle.allCases) { style in
@@ -236,7 +256,7 @@ struct ScreenshotEditorView: View {
             }
             
             LabeledContent("radius") {
-                SliderWithDefaultCGFloat(
+                OptimizedSlider(
                     value: $viewModel.config.borderRadius,
                     range: 0...40,
                     defaultValue: 20,
@@ -245,11 +265,9 @@ struct ScreenshotEditorView: View {
             }
         }
         
-        // Transform
         Section("transform") {
-            // Scale
             LabeledContent("scale") {
-                SliderWithDefaultCGFloat(
+                OptimizedSlider(
                     value: $viewModel.config.scale,
                     range: 0.1...3.0,
                     defaultValue: 1.0,
@@ -258,7 +276,6 @@ struct ScreenshotEditorView: View {
                 )
             }
             
-            // Rotation Z (2D)
             LabeledContent("rotation") {
                 HStack(spacing: 4) {
                     Button {
@@ -286,43 +303,35 @@ struct ScreenshotEditorView: View {
                 }
             }
             
-            // Rotation X (3D) - désactivé avec glassEffect
             if viewModel.config.mockupStyle != .glassEffect {
                 LabeledContent("rotation.x") {
                     HStack(spacing: 4) {
-                        SliderWithDefault(
+                        OptimizedSlider(
                             value: $viewModel.config.rotationX,
                             range: -90...90,
                             defaultValue: 0,
                             showValue: true,
                             unit: "°"
                         )
-                        Button {
-                            viewModel.config.rotationX = 0
-                        } label: {
-                            Image(systemName: "arrow.counterclockwise")
-                                .font(.system(size: 11))
+                        Button { viewModel.config.rotationX = 0 } label: {
+                            Image(systemName: "arrow.counterclockwise").font(.system(size: 11))
                         }
                         .buttonStyle(.bordered)
                         .help("Reset")
                     }
                 }
                 
-                // Rotation Y (3D)
                 LabeledContent("rotation.y") {
                     HStack(spacing: 4) {
-                        SliderWithDefault(
+                        OptimizedSlider(
                             value: $viewModel.config.rotationY,
                             range: -90...90,
                             defaultValue: 0,
                             showValue: true,
                             unit: "°"
                         )
-                        Button {
-                            viewModel.config.rotationY = 0
-                        } label: {
-                            Image(systemName: "arrow.counterclockwise")
-                                .font(.system(size: 11))
+                        Button { viewModel.config.rotationY = 0 } label: {
+                            Image(systemName: "arrow.counterclockwise").font(.system(size: 11))
                         }
                         .buttonStyle(.bordered)
                         .help("Reset")
@@ -332,12 +341,10 @@ struct ScreenshotEditorView: View {
         }
     }
     
-    // MARK: - Background Section (Tab 1)
+    // MARK: - Background Section
     @ViewBuilder
     private var backgroundSectionContent: some View {
-        // Background Type
         Section("background") {
-            // Type picker with icons
             HStack(spacing: 2) {
                 ForEach(BackgroundType.allCases) { type in
                     backgroundTypeButton(type)
@@ -346,16 +353,13 @@ struct ScreenshotEditorView: View {
             .padding(3)
             .background(Color.gray.opacity(0.2), in: RoundedRectangle(cornerRadius: 10))
             
-            // Background content
             backgroundContent
         }
         
-        // Effects - available for all backgrounds except transparent
         if viewModel.config.backgroundType != .transparent {
             Section("effects") {
-                // Blur - unified for all backgrounds (limited to 80 for performance)
                 LabeledContent("blur") {
-                    SliderWithDefault(
+                    OptimizedSlider(
                         value: $viewModel.config.gradientConfig.blurAmount,
                         range: 0...80,
                         defaultValue: 0,
@@ -363,9 +367,8 @@ struct ScreenshotEditorView: View {
                     )
                 }
                 
-                // Saturation (GPU-accelerated via Metal shader)
                 LabeledContent("saturation") {
-                    SliderWithDefault(
+                    OptimizedSlider(
                         value: $viewModel.config.gradientConfig.saturation,
                         range: 0...200,
                         defaultValue: 100,
@@ -374,9 +377,8 @@ struct ScreenshotEditorView: View {
                     )
                 }
                 
-                // Brightness (GPU-accelerated via Metal shader)
                 LabeledContent("brightness") {
-                    SliderWithDefault(
+                    OptimizedSlider(
                         value: $viewModel.config.gradientConfig.brightness,
                         range: 50...150,
                         defaultValue: 100,
@@ -385,9 +387,8 @@ struct ScreenshotEditorView: View {
                     )
                 }
                 
-                // Noise - unified for all backgrounds (GPU-accelerated)
                 LabeledContent("noise") {
-                    SliderWithDefault(
+                    OptimizedSlider(
                         value: $viewModel.config.gradientConfig.noiseAmount,
                         range: 0...100,
                         defaultValue: 0,
@@ -398,13 +399,12 @@ struct ScreenshotEditorView: View {
         }
     }
     
-    // MARK: - Layout Section (Tab 2)
+    // MARK: - Layout Section
     @ViewBuilder
     private var layoutSectionContent: some View {
-        // Layout Controls - only scale, no padding
         Section("layout") {
             LabeledContent("scale") {
-                SliderWithDefaultCGFloat(
+                OptimizedSlider(
                     value: $viewModel.config.imageScale,
                     range: 10...200,
                     defaultValue: 100,
@@ -414,7 +414,6 @@ struct ScreenshotEditorView: View {
             }
         }
         
-        // Social Presets
         if viewModel.config.selectedSocialPreset != nil {
             Section("export.size") {
                 if let preset = viewModel.config.selectedSocialPreset {
@@ -427,9 +426,7 @@ struct ScreenshotEditorView: View {
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Button {
-                            viewModel.config.selectedSocialPreset = nil
-                        } label: {
+                        Button { viewModel.config.selectedSocialPreset = nil } label: {
                             Image(systemName: "xmark.circle.fill")
                                 .foregroundStyle(.tertiary)
                         }
@@ -439,7 +436,6 @@ struct ScreenshotEditorView: View {
             }
         }
         
-        // Platform presets - expanded by default
         Section {
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
                 ForEach(SocialMediaPreset.groupedByPlatform.keys.sorted(), id: \.self) { platform in
@@ -453,42 +449,6 @@ struct ScreenshotEditorView: View {
         }
     }
     
-    // MARK: - Export Section (Tab 3)
-    @ViewBuilder
-    private var exportSectionContent: some View {
-        // Quick Actions
-        Section("actions") {
-            // Primary action - Copy
-            Button {
-                if let img = viewModel.copyAction() { onCopy(img) }
-            } label: {
-                Label("copy.to.clipboard", systemImage: "doc.on.clipboard.fill")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            
-            // Secondary action - Save
-            Button {
-                viewModel.saveAction()
-            } label: {
-                Label("save.to.file", systemImage: "square.and.arrow.down")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.regular)
-        }
-        
-        // Reset
-        Section {
-            Button(role: .destructive) {
-                viewModel.resetPosition()
-            } label: {
-                Label("reset.position", systemImage: "arrow.counterclockwise")
-            }
-        }
-    }
-    
     // MARK: - Background Content
     @ViewBuilder
     private var backgroundContent: some View {
@@ -496,13 +456,10 @@ struct ScreenshotEditorView: View {
         case .transparent:
             Label("transparent", systemImage: "checkerboard.rectangle")
                 .foregroundStyle(.secondary)
-            
         case .color:
             colorPickerGrid
-            
         case .gradient:
             gradientEditor
-            
         case .image:
             wallpaperPicker
         }
@@ -510,34 +467,24 @@ struct ScreenshotEditorView: View {
     
     // MARK: - Open Native Color Panel
     private func openColorPanel() {
+        cleanupObservers()
+        
         let colorPanel = NSColorPanel.shared
         
-        // Retirer l'observer précédent s'il existe
-        if let observer = colorPanelObserver {
-            NotificationCenter.default.removeObserver(observer)
-        }
-        
-        // Convertir la couleur SwiftUI en NSColor
-        let currentNSColor: NSColor
-        if viewModel.config.customColor != .clear {
-            currentNSColor = NSColor(viewModel.config.customColor)
-        } else {
-            currentNSColor = .white
-        }
+        let currentNSColor: NSColor = viewModel.config.customColor != .clear
+            ? NSColor(viewModel.config.customColor)
+            : .white
         
         colorPanel.color = currentNSColor
         colorPanel.isContinuous = true
         
-        // Observer les changements de couleur
-        let observer = NotificationCenter.default.addObserver(
+        colorPanelObserver = NotificationCenter.default.addObserver(
             forName: NSColorPanel.colorDidChangeNotification,
             object: colorPanel,
             queue: .main
         ) { _ in
-            let selectedColor = colorPanel.color
-            self.viewModel.config.customColor = Color(nsColor: selectedColor)
+            self.viewModel.config.customColor = Color(nsColor: colorPanel.color)
             
-            // Désélectionner les presets quand une couleur personnalisée est choisie
             if self.viewModel.config.customColor != .clear {
                 self.viewModel.config.selectedMagicPreset = nil
                 self.viewModel.config.selectedGradient = nil
@@ -546,18 +493,12 @@ struct ScreenshotEditorView: View {
             }
         }
         
-        colorPanelObserver = observer
-        
-        // Nettoyer l'observer quand le panneau se ferme
-        NotificationCenter.default.addObserver(
+        colorPanelCloseObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification,
             object: colorPanel,
             queue: .main
         ) { _ in
-            if let observer = self.colorPanelObserver {
-                NotificationCenter.default.removeObserver(observer)
-                self.colorPanelObserver = nil
-            }
+            self.cleanupObservers()
         }
         
         colorPanel.orderFront(nil)
@@ -567,7 +508,6 @@ struct ScreenshotEditorView: View {
     // MARK: - Color Picker Grid
     private var colorPickerGrid: some View {
         HStack(spacing: 10) {
-            // 5 preset colors
             ForEach(MagicPreset.presets) { preset in
                 let isSelected = viewModel.config.selectedMagicPreset?.id == preset.id && viewModel.config.customColor == .clear
                 Button {
@@ -575,60 +515,47 @@ struct ScreenshotEditorView: View {
                     viewModel.config.selectedGradient = nil
                     viewModel.config.selectedSolidColor = nil
                     viewModel.config.backgroundImageURL = nil
-                    viewModel.config.customColor = .clear // Reset custom color
+                    viewModel.config.customColor = .clear
                 } label: {
                     Circle()
                         .fill(preset.colors.first ?? .white)
                         .frame(width: 32, height: 32)
                         .overlay(
-                            Circle()
-                                .strokeBorder(isSelected ? .white : .white.opacity(0.2), lineWidth: isSelected ? 2.5 : 1)
+                            Circle().strokeBorder(isSelected ? .white : .white.opacity(0.2), lineWidth: isSelected ? 2.5 : 1)
                         )
                 }
                 .buttonStyle(.plain)
             }
             
-            // Custom color picker (rainbow circle with gradient)
-            Button {
-                // Ouvrir le sélecteur de couleur macOS natif
-                openColorPanel()
-            } label: {
+            Button(action: openColorPanel) {
                 ZStack {
-                    // Dégradé arc-en-ciel circulaire
                     Circle()
-                        .fill(
-                            AngularGradient(
-                                stops: [
-                                    .init(color: .red, location: 0.0),
-                                    .init(color: .yellow, location: 0.17),
-                                    .init(color: .green, location: 0.33),
-                                    .init(color: .cyan, location: 0.5),
-                                    .init(color: .blue, location: 0.67),
-                                    .init(color: .purple, location: 0.83),
-                                    .init(color: .red, location: 1.0)
-                                ],
-                                center: .center
-                            )
-                        )
+                        .fill(AngularGradient(
+                            stops: [
+                                .init(color: .red, location: 0.0),
+                                .init(color: .yellow, location: 0.17),
+                                .init(color: .green, location: 0.33),
+                                .init(color: .cyan, location: 0.5),
+                                .init(color: .blue, location: 0.67),
+                                .init(color: .purple, location: 0.83),
+                                .init(color: .red, location: 1.0)
+                            ],
+                            center: .center
+                        ))
                         .frame(width: 32, height: 32)
                     
-                    // Indicateur si une couleur personnalisée est sélectionnée
                     if viewModel.config.customColor != .clear {
                         Circle()
                             .fill(viewModel.config.customColor)
                             .frame(width: 24, height: 24)
-                            .overlay(
-                                Circle()
-                                    .strokeBorder(.white, lineWidth: 2)
-                            )
+                            .overlay(Circle().strokeBorder(.white, lineWidth: 2))
                     }
                 }
                 .overlay(
-                    Circle()
-                        .strokeBorder(
-                            viewModel.config.customColor != .clear ? .white : .white.opacity(0.2),
-                            lineWidth: viewModel.config.customColor != .clear ? 2.5 : 1
-                        )
+                    Circle().strokeBorder(
+                        viewModel.config.customColor != .clear ? .white : .white.opacity(0.2),
+                        lineWidth: viewModel.config.customColor != .clear ? 2.5 : 1
+                    )
                 )
             }
             .buttonStyle(.plain)
@@ -638,7 +565,6 @@ struct ScreenshotEditorView: View {
     // MARK: - Gradient Editor
     private var gradientEditor: some View {
         VStack(spacing: 14) {
-            // Style picker
             HStack(spacing: 2) {
                 ForEach(GradientStyle.allCases) { style in
                     let isSelected = viewModel.config.gradientConfig.style == style
@@ -652,11 +578,7 @@ struct ScreenshotEditorView: View {
                             .foregroundStyle(isSelected ? .white : .secondary)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 7)
-                            .background {
-                                if isSelected {
-                                    Capsule().fill(Color.accentColor)
-                                }
-                            }
+                            .background { if isSelected { Capsule().fill(Color.accentColor) } }
                     }
                     .buttonStyle(.plain)
                 }
@@ -664,7 +586,6 @@ struct ScreenshotEditorView: View {
             .padding(3)
             .background(Color.gray.opacity(0.2), in: Capsule())
             
-            // Color pickers - simplified to 2 or 3 colors
             HStack(spacing: 8) {
                 ColorPicker("", selection: $viewModel.config.gradientConfig.color1)
                     .labelsHidden()
@@ -685,7 +606,6 @@ struct ScreenshotEditorView: View {
                 
                 Spacer()
                 
-                // Toggle 2/3 colors
                 Button {
                     withAnimation(.easeInOut(duration: 0.2)) {
                         viewModel.config.gradientConfig.useThreeColors.toggle()
@@ -707,7 +627,6 @@ struct ScreenshotEditorView: View {
                 .help("Randomize")
             }
             
-            // Angle slider for linear gradient
             if viewModel.config.gradientConfig.style == .linear {
                 HStack {
                     Image(systemName: "angle")
@@ -721,7 +640,6 @@ struct ScreenshotEditorView: View {
                 }
             }
             
-            // Presets
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 48), spacing: 6)], spacing: 6) {
                 ForEach(SimpleGradientPreset.presets) { preset in
                     gradientPresetButton(preset)
@@ -733,9 +651,7 @@ struct ScreenshotEditorView: View {
     // MARK: - Wallpaper Picker
     private var wallpaperPicker: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Button {
-                viewModel.importCustomImage()
-            } label: {
+            Button(action: viewModel.importCustomImage) {
                 Label("import.image", systemImage: "plus.circle.fill")
                     .frame(maxWidth: .infinity)
             }
@@ -743,8 +659,7 @@ struct ScreenshotEditorView: View {
             
             if viewModel.wallpaperImages.isEmpty {
                 HStack {
-                    ProgressView()
-                        .scaleEffect(0.7)
+                    ProgressView().scaleEffect(0.7)
                     Text("loading.wallpapers")
                         .font(.system(size: 11))
                         .foregroundStyle(.tertiary)
@@ -758,7 +673,7 @@ struct ScreenshotEditorView: View {
                         }
                     }
                 }
-                .frame(maxHeight: 200) // Limiter la hauteur pour éviter une zone trop grande
+                .frame(maxHeight: 200)
             }
         }
     }
@@ -767,11 +682,8 @@ struct ScreenshotEditorView: View {
     private var canvasView: some View {
         GeometryReader { geo in
             ZStack {
-                // Liquid Glass background - rectangle shape
-                Color.clear
-                    .glassEffect(.regular, in: .rect)
+                Color.clear.glassEffect(.regular, in: .rect)
                 
-                // Screenshot canvas
                 ScreenshotPreviewCanvas(
                     image: viewModel.originalImage,
                     config: viewModel.config,
@@ -808,37 +720,27 @@ struct ScreenshotEditorView: View {
     
     // MARK: - Component Builders
     
-    
     private func mockupStyleButton(_ style: MockupStyle) -> some View {
         let isSelected = viewModel.config.mockupStyle == style
         return Button {
             viewModel.config.mockupStyle = style
-            // Réinitialiser les rotations 3D si on sélectionne glassEffect
             if style == .glassEffect {
                 viewModel.config.rotationX = 0
                 viewModel.config.rotationY = 0
             }
         } label: {
             VStack(spacing: 4) {
-                // Preview avec un mini screenshot
                 ZStack {
-                    // Background
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(Color.gray.opacity(0.2))
+                    RoundedRectangle(cornerRadius: 6).fill(Color.gray.opacity(0.2))
                     
-                    // Fake screenshot preview
                     RoundedRectangle(cornerRadius: 3)
                         .fill(Color.white.opacity(0.9))
                         .padding(style == .defaultStyle ? 4 : 8)
                         .background {
                             if style == .glassEffect {
-                                RoundedRectangle(cornerRadius: 4)
-                                    .fill(.ultraThinMaterial)
-                                    .padding(4)
+                                RoundedRectangle(cornerRadius: 4).fill(.ultraThinMaterial).padding(4)
                             } else if style == .border {
-                                RoundedRectangle(cornerRadius: 4)
-                                    .fill(Color.gray.opacity(0.5))
-                                    .padding(4)
+                                RoundedRectangle(cornerRadius: 4).fill(Color.gray.opacity(0.5)).padding(4)
                             }
                         }
                 }
@@ -869,8 +771,7 @@ struct ScreenshotEditorView: View {
                 .contentShape(Rectangle())
                 .background {
                     if isSelected {
-                        RoundedRectangle(cornerRadius: 7)
-                            .fill(Color.accentColor)
+                        RoundedRectangle(cornerRadius: 7).fill(Color.accentColor)
                     }
                 }
         }
@@ -968,12 +869,13 @@ struct ScreenshotEditorView: View {
     }
 }
 
-// MARK: - Slider with Default Indicator (Double version)
-struct SliderWithDefault: View {
-    @Binding var value: Double
-    let range: ClosedRange<Double>
-    let defaultValue: Double
-    var step: Double? = nil
+// MARK: - Optimized Generic Slider
+/// Slider générique optimisé supportant Double et CGFloat
+struct OptimizedSlider<T: BinaryFloatingPoint>: View where T.Stride: BinaryFloatingPoint {
+    @Binding var value: T
+    let range: ClosedRange<T>
+    let defaultValue: T
+    var step: T? = nil
     var showValue: Bool = false
     var unit: String = ""
     var decimals: Int = 0
@@ -981,10 +883,8 @@ struct SliderWithDefault: View {
     var body: some View {
         HStack(spacing: 4) {
             ZStack(alignment: .leading) {
-                // Background track
                 GeometryReader { geometry in
-                    // Default value indicator line
-                    let normalizedDefault = (defaultValue - range.lowerBound) / (range.upperBound - range.lowerBound)
+                    let normalizedDefault = CGFloat((defaultValue - range.lowerBound) / (range.upperBound - range.lowerBound))
                     let defaultPosition = geometry.size.width * normalizedDefault
                     
                     Rectangle()
@@ -994,9 +894,8 @@ struct SliderWithDefault: View {
                 }
                 .frame(height: 20)
                 
-                // Actual slider with smooth interaction
                 if let step = step {
-                    Slider(value: $value, in: range, step: step)
+                    Slider(value: $value, in: range, step: T.Stride(step))
                 } else {
                     Slider(value: $value, in: range)
                 }
@@ -1009,80 +908,19 @@ struct SliderWithDefault: View {
                     .foregroundStyle(.tertiary)
                     .frame(width: unit.isEmpty ? 28 : 36, alignment: .trailing)
                     .contentTransition(.numericText())
-                    .animation(.snappy(duration: 0.15), value: value)
+                    .animation(.snappy(duration: 0.15), value: Double(value))
             }
         }
     }
     
-    private func formatValue(_ val: Double) -> String {
+    private func formatValue(_ val: T) -> String {
+        let doubleVal = Double(val)
         if decimals > 0 {
-            return String(format: "%.\(decimals)f", val)
+            return String(format: "%.\(decimals)f", doubleVal)
         } else if unit == "%" {
-            return "\(Int(val))"
+            return "\(Int(doubleVal))"
         } else {
-            return String(format: "%.0f", val)
+            return String(format: "%.0f", doubleVal)
         }
     }
 }
-
-// MARK: - Slider with Default Indicator (CGFloat version)
-struct SliderWithDefaultCGFloat: View {
-    @Binding var value: CGFloat
-    let range: ClosedRange<CGFloat>
-    let defaultValue: CGFloat
-    var step: CGFloat? = nil
-    var showValue: Bool = false
-    var unit: String = ""
-    var decimals: Int = 0
-    
-    var body: some View {
-        HStack(spacing: 4) {
-            ZStack(alignment: .leading) {
-                // Background track
-                GeometryReader { geometry in
-                    // Default value indicator line
-                    let normalizedDefault = (defaultValue - range.lowerBound) / (range.upperBound - range.lowerBound)
-                    let defaultPosition = geometry.size.width * normalizedDefault
-                    
-                    Rectangle()
-                        .fill(Color.white.opacity(0.15))
-                        .frame(width: 2, height: 20)
-                        .position(x: defaultPosition, y: geometry.size.height / 2)
-                }
-                .frame(height: 20)
-                
-                // Actual slider with smooth interaction
-                if let step = step {
-                    Slider(value: $value, in: range, step: step)
-                } else {
-                    Slider(value: $value, in: range)
-                }
-            }
-            .frame(width: 100)
-            
-            if showValue {
-                Text(formatValue(value) + unit)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.tertiary)
-                    .frame(width: unit.isEmpty ? 28 : 36, alignment: .trailing)
-                    .contentTransition(.numericText())
-                    .animation(.snappy(duration: 0.15), value: value)
-            }
-        }
-    }
-    
-    private func formatValue(_ val: CGFloat) -> String {
-        if decimals > 0 {
-            return String(format: "%.\(decimals)f", val)
-        } else if unit == "%" {
-            return "\(Int(val))"
-        } else {
-            return String(format: "%.0f", val)
-        }
-    }
-}
-
-
-
-
-

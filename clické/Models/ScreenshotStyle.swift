@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-// MARK: - Mockup Style (simplifié)
+// MARK: - Mockup Style
 enum MockupStyle: String, CaseIterable, Identifiable {
     case defaultStyle
     case glassEffect
@@ -71,29 +71,45 @@ enum BackgroundType: String, CaseIterable, Identifiable {
     }
 }
 
-// MARK: - Magic Color Preset (5 quick colors)
+// MARK: - Magic Color Preset (cached colors for performance)
 struct MagicPreset: Identifiable, Equatable {
-    let id = UUID()
+    let id: UUID
     let colors: [Color]
     let qisPremium: Bool
     
-    static let presets: [MagicPreset] = [
-        MagicPreset(colors: [Color(hex: "ffffff")], qisPremium: false), // White
-        MagicPreset(colors: [Color(hex: "1a1a1a")], qisPremium: false), // Black
-        MagicPreset(colors: [Color(hex: "667eea")], qisPremium: false), // Blue
-        MagicPreset(colors: [Color(hex: "f953c6")], qisPremium: false), // Pink
-        MagicPreset(colors: [Color(hex: "11998e")], qisPremium: false), // Teal
+    init(colors: [Color], qisPremium: Bool) {
+        self.id = UUID()
+        self.colors = colors
+        self.qisPremium = qisPremium
+    }
+    
+    // Cached presets - créés une seule fois
+    private static let _presets: [MagicPreset] = [
+        MagicPreset(colors: [Color(hex: "ffffff")], qisPremium: false),
+        MagicPreset(colors: [Color(hex: "1a1a1a")], qisPremium: false),
+        MagicPreset(colors: [Color(hex: "667eea")], qisPremium: false),
+        MagicPreset(colors: [Color(hex: "f953c6")], qisPremium: false),
+        MagicPreset(colors: [Color(hex: "11998e")], qisPremium: false),
     ]
+    
+    static var presets: [MagicPreset] { _presets }
 }
 
-// MARK: - Shadow Scene (texture backgrounds)
+// MARK: - Shadow Scene
 struct ShadowScene: Identifiable, Equatable {
-    let id = UUID()
+    let id: UUID
     let name: String
     let colors: [Color]
     let isTexture: Bool
     
-    static let scenes: [ShadowScene] = [
+    init(name: String, colors: [Color], isTexture: Bool) {
+        self.id = UUID()
+        self.name = name
+        self.colors = colors
+        self.isTexture = isTexture
+    }
+    
+    private static let _scenes: [ShadowScene] = [
         ShadowScene(name: "Cream", colors: [Color(hex: "f5e6d3"), Color(hex: "e8d4b8")], isTexture: true),
         ShadowScene(name: "Sand", colors: [Color(hex: "d4b896"), Color(hex: "c4a576")], isTexture: true),
         ShadowScene(name: "Paper", colors: [Color(hex: "f8f8f8"), Color(hex: "e8e8e8")], isTexture: true),
@@ -111,28 +127,43 @@ struct ShadowScene: Identifiable, Equatable {
         ShadowScene(name: "Metal", colors: [Color(hex: "4a4a4a"), Color(hex: "2d2d2d")], isTexture: true),
         ShadowScene(name: "Gold", colors: [Color(hex: "ffd700"), Color(hex: "b8860b")], isTexture: true),
     ]
+    
+    static var scenes: [ShadowScene] { _scenes }
 }
 
 // MARK: - Solid Colors
 struct SolidColor: Identifiable, Equatable {
-    let id = UUID()
+    let id: UUID
     let color: Color
     
-    static let colors: [SolidColor] = [
+    init(color: Color) {
+        self.id = UUID()
+        self.color = color
+    }
+    
+    private static let _colors: [SolidColor] = [
         SolidColor(color: Color(hex: "f8f9fa")),
         SolidColor(color: Color(hex: "343a40")),
         SolidColor(color: Color(hex: "adb5bd")),
         SolidColor(color: Color(hex: "dee2e6")),
     ]
+    
+    static var colors: [SolidColor] { _colors }
 }
 
 // MARK: - Gradient Presets
 struct GradientPreset: Identifiable, Equatable {
-    let id = UUID()
+    let id: UUID
     let colors: [Color]
     let angle: Double
     
-    static let presets: [GradientPreset] = [
+    init(colors: [Color], angle: Double) {
+        self.id = UUID()
+        self.colors = colors
+        self.angle = angle
+    }
+    
+    private static let _presets: [GradientPreset] = [
         GradientPreset(colors: [Color(hex: "ff6b6b"), Color(hex: "feca57")], angle: 135),
         GradientPreset(colors: [Color(hex: "667eea"), Color(hex: "764ba2")], angle: 135),
         GradientPreset(colors: [Color(hex: "a8edea"), Color(hex: "fed6e3")], angle: 135),
@@ -142,9 +173,11 @@ struct GradientPreset: Identifiable, Equatable {
         GradientPreset(colors: [Color(hex: "f093fb"), Color(hex: "f5576c")], angle: 135),
         GradientPreset(colors: [Color(hex: "4facfe"), Color(hex: "00f2fe")], angle: 135),
     ]
+    
+    static var presets: [GradientPreset] { _presets }
 }
 
-// MARK: - Simple Gradient Style
+// MARK: - Gradient Style
 enum GradientStyle: String, CaseIterable, Identifiable {
     case linear
     case radial
@@ -172,50 +205,37 @@ enum GradientStyle: String, CaseIterable, Identifiable {
 // MARK: - Simple Gradient Configuration
 struct SimpleGradientConfig: Equatable {
     var style: GradientStyle = .linear
-    var color1: Color = Color(hex: "667eea")  // Start color
-    var color2: Color = Color(hex: "764ba2")  // Middle color (optional)
-    var color3: Color = Color(hex: "f953c6")  // End color
-    var useThreeColors: Bool = true           // Toggle between 2 or 3 colors
-    var angle: Double = 135                   // Angle for linear gradient (degrees)
+    var color1: Color = Color(hex: "667eea")
+    var color2: Color = Color(hex: "764ba2")
+    var color3: Color = Color(hex: "f953c6")
+    var useThreeColors: Bool = true
+    var angle: Double = 135
     
     // Effects
-    var blurAmount: Double = 0               // Blur for softer transitions (0-150)
-    var noiseAmount: Double = 0              // Grain/noise overlay (0-100)
-    var saturation: Double = 100             // Color saturation (0-200)
-    var brightness: Double = 100             // Brightness adjustment (50-150)
+    var blurAmount: Double = 0
+    var noiseAmount: Double = 0
+    var saturation: Double = 100
+    var brightness: Double = 100
     
     static let `default` = SimpleGradientConfig()
     
-    // Get colors array based on configuration
     private var gradientColors: [Color] {
-        if useThreeColors {
-            return [color1, color2, color3]
-        } else {
-            return [color1, color3]
-        }
+        useThreeColors ? [color1, color2, color3] : [color1, color3]
     }
     
-    // Convert angle to start/end points for linear gradient
     private var linearStartPoint: UnitPoint {
         let radians = (angle - 90) * .pi / 180
-        let x = 0.5 - cos(radians) * 0.5
-        let y = 0.5 - sin(radians) * 0.5
-        return UnitPoint(x: x, y: y)
+        return UnitPoint(x: 0.5 - cos(radians) * 0.5, y: 0.5 - sin(radians) * 0.5)
     }
     
     private var linearEndPoint: UnitPoint {
         let radians = (angle - 90) * .pi / 180
-        let x = 0.5 + cos(radians) * 0.5
-        let y = 0.5 + sin(radians) * 0.5
-        return UnitPoint(x: x, y: y)
+        return UnitPoint(x: 0.5 + cos(radians) * 0.5, y: 0.5 + sin(radians) * 0.5)
     }
     
-    // Create gradient view based on style with effects
-    // Note: Blur and noise are applied at the canvas level to avoid issues with blur+noise combination
     @ViewBuilder
     func gradientView(size: CGSize, isRendering: Bool = false) -> some View {
         gradientBase(size: size)
-            // Use SwiftUI native modifiers during export (Metal shaders don't work with ImageRenderer)
             .saturation(isRendering ? saturation / 100 : 1.0)
             .brightness(isRendering ? (brightness - 100) / 100 : 0.0)
             .colorAdjustments(
@@ -225,7 +245,6 @@ struct SimpleGradientConfig: Equatable {
             .frame(width: size.width, height: size.height)
     }
     
-    // Preview version for preset buttons (with effects applied for visual feedback)
     @ViewBuilder
     func previewView(size: CGSize) -> some View {
         gradientBase(size: size)
@@ -236,94 +255,64 @@ struct SimpleGradientConfig: Equatable {
     private func gradientBase(size: CGSize) -> some View {
         switch style {
         case .linear:
-            LinearGradient(
-                colors: gradientColors,
-                startPoint: linearStartPoint,
-                endPoint: linearEndPoint
-            )
+            LinearGradient(colors: gradientColors, startPoint: linearStartPoint, endPoint: linearEndPoint)
         case .radial:
-            RadialGradient(
-                colors: gradientColors,
-                center: .center,
-                startRadius: 0,
-                endRadius: max(size.width, size.height) * 0.7
-            )
+            RadialGradient(colors: gradientColors, center: .center, startRadius: 0, endRadius: max(size.width, size.height) * 0.7)
         case .angular:
-            AngularGradient(
-                colors: gradientColors + [gradientColors.first ?? color1],
-                center: .center
-            )
+            AngularGradient(colors: gradientColors + [gradientColors.first ?? color1], center: .center)
         }
     }
 }
 
-// MARK: - Grain/Noise Overlay (Using Metal Shader for overlay effect)
+// MARK: - Grain/Noise Overlay
 struct GrainOverlay: View {
-    let intensity: Double // 0 to 1
+    let intensity: Double
     
     var body: some View {
         Rectangle()
             .fill(.white)
-            .colorEffect(
-                ShaderLibrary.noise(
-                    .float(intensity)
-                )
-            )
+            .colorEffect(ShaderLibrary.noise(.float(intensity)))
             .allowsHitTesting(false)
             .blendMode(.overlay)
-            .opacity(intensity * 0.5) // Reduce overall opacity for subtlety
+            .opacity(intensity * 0.5)
     }
 }
 
 // MARK: - Simple Gradient Presets
 struct SimpleGradientPreset: Identifiable, Equatable {
-    let id = UUID()
+    let id: UUID
     let name: String
     let config: SimpleGradientConfig
+    
+    init(name: String, config: SimpleGradientConfig) {
+        self.id = UUID()
+        self.name = name
+        self.config = config
+    }
     
     static func == (lhs: SimpleGradientPreset, rhs: SimpleGradientPreset) -> Bool {
         lhs.id == rhs.id
     }
     
-    static let presets: [SimpleGradientPreset] = [
-        // Cinder — near-black ember to deep rust
+    private static let _presets: [SimpleGradientPreset] = [
         SimpleGradientPreset(name: "Cinder", config: SimpleGradientConfig(
-            color1: Color(hex: "120806"),
-            color2: Color(hex: "6b1f14"),
-            color3: Color(hex: "6b1f14"),
-            useThreeColors: false
+            color1: Color(hex: "120806"), color2: Color(hex: "6b1f14"), color3: Color(hex: "6b1f14"), useThreeColors: false
         )),
-        // Trench — ink navy to cold steel blue
         SimpleGradientPreset(name: "Trench", config: SimpleGradientConfig(
-            color1: Color(hex: "050a14"),
-            color2: Color(hex: "233a52"),
-            color3: Color(hex: "233a52"),
-            useThreeColors: false
+            color1: Color(hex: "050a14"), color2: Color(hex: "233a52"), color3: Color(hex: "233a52"), useThreeColors: false
         )),
-        // Black Pine — almost-black green to sharp moss
         SimpleGradientPreset(name: "Black Pine", config: SimpleGradientConfig(
-            color1: Color(hex: "070f0b"),
-            color2: Color(hex: "2f5a45"),
-            color3: Color(hex: "2f5a45"),
-            useThreeColors: false
+            color1: Color(hex: "070f0b"), color2: Color(hex: "2f5a45"), color3: Color(hex: "2f5a45"), useThreeColors: false
         )),
-        // Obsidian Sand — deep charcoal to warm mineral beige
         SimpleGradientPreset(name: "Obsidian Sand", config: SimpleGradientConfig(
-            color1: Color(hex: "0e0c0b"),
-            color2: Color(hex: "6a5a4a"),
-            color3: Color(hex: "6a5a4a"),
-            useThreeColors: false
+            color1: Color(hex: "0e0c0b"), color2: Color(hex: "6a5a4a"), color3: Color(hex: "6a5a4a"), useThreeColors: false
         )),
-        // Midnight Surge — blue-black to electric deep teal
         SimpleGradientPreset(name: "Midnight Surge", config: SimpleGradientConfig(
-            color1: Color(hex: "020409"),
-            color2: Color(hex: "0b1f2a"),
-            color3: Color(hex: "1f4e5f"),
-            useThreeColors: true
+            color1: Color(hex: "020409"), color2: Color(hex: "0b1f2a"), color3: Color(hex: "1f4e5f"), useThreeColors: true
         )),
     ]
-
-
+    
+    static var presets: [SimpleGradientPreset] { _presets }
 }
 
 // MARK: - Shadow Scene Mode
@@ -351,7 +340,7 @@ struct TextOverlay: Identifiable, Equatable {
     var position: CGPoint = .zero
     var rotation: Double = 0
     var opacity: Double = 1.0
-    var isBlurred: Bool = false // Pour masquer/crypter le texte
+    var isBlurred: Bool = false
 }
 
 // MARK: - Redact Region
@@ -395,7 +384,7 @@ enum RedactStyle: String, CaseIterable, Identifiable {
 
 // MARK: - Social Media Export Presets
 struct SocialMediaPreset: Identifiable, Equatable {
-    let id = UUID()
+    let id: UUID
     let platform: String
     let name: String
     let width: Int
@@ -403,43 +392,42 @@ struct SocialMediaPreset: Identifiable, Equatable {
     let icon: String
     let ratio: String
     
+    init(platform: String, name: String, width: Int, height: Int, icon: String, ratio: String) {
+        self.id = UUID()
+        self.platform = platform
+        self.name = name
+        self.width = width
+        self.height = height
+        self.icon = icon
+        self.ratio = ratio
+    }
+    
     var aspectRatio: CGFloat {
         CGFloat(width) / CGFloat(height)
     }
     
-    static let presets: [SocialMediaPreset] = [
-        // Twitter
+    private static let _presets: [SocialMediaPreset] = [
         SocialMediaPreset(platform: "Twitter", name: "Tweet", width: 1200, height: 675, icon: "bird", ratio: "16:9"),
         SocialMediaPreset(platform: "Twitter", name: "Cover", width: 1500, height: 500, icon: "bird", ratio: "3:1"),
-        
-        // YouTube
         SocialMediaPreset(platform: "YouTube", name: "Thumbnail", width: 1280, height: 720, icon: "play.rectangle.fill", ratio: "16:9"),
         SocialMediaPreset(platform: "YouTube", name: "Banner", width: 2560, height: 1440, icon: "play.rectangle.fill", ratio: "16:9"),
-        
-        // Instagram
         SocialMediaPreset(platform: "Instagram", name: "Post", width: 1080, height: 1080, icon: "camera", ratio: "1:1"),
         SocialMediaPreset(platform: "Instagram", name: "Portrait", width: 1080, height: 1350, icon: "camera", ratio: "4:5"),
         SocialMediaPreset(platform: "Instagram", name: "Story", width: 1080, height: 1920, icon: "camera", ratio: "9:16"),
-        
-        // Pinterest
         SocialMediaPreset(platform: "Pinterest", name: "Long", width: 1000, height: 2100, icon: "pin", ratio: "10:21"),
         SocialMediaPreset(platform: "Pinterest", name: "Optimal", width: 1000, height: 1500, icon: "pin", ratio: "2:3"),
         SocialMediaPreset(platform: "Pinterest", name: "Square", width: 1000, height: 1000, icon: "pin", ratio: "1:1"),
-        
-        // Dribbble
         SocialMediaPreset(platform: "Dribbble", name: "Shot", width: 1600, height: 1200, icon: "basketball", ratio: "4:3"),
         SocialMediaPreset(platform: "Dribbble", name: "Full", width: 1600, height: 2400, icon: "basketball", ratio: "2:3"),
-        
-        // LinkedIn
         SocialMediaPreset(platform: "LinkedIn", name: "Post", width: 1200, height: 627, icon: "person.crop.rectangle", ratio: "1.91:1"),
         SocialMediaPreset(platform: "LinkedIn", name: "Cover", width: 1584, height: 396, icon: "person.crop.rectangle", ratio: "4:1"),
-        
-        // Common Sizes
         SocialMediaPreset(platform: "Standard", name: "16:9", width: 1920, height: 1080, icon: "rectangle", ratio: "16:9"),
         SocialMediaPreset(platform: "Standard", name: "4:3", width: 1920, height: 1440, icon: "rectangle", ratio: "4:3"),
         SocialMediaPreset(platform: "Standard", name: "1:1", width: 1080, height: 1080, icon: "square", ratio: "1:1"),
         SocialMediaPreset(platform: "Standard", name: "3:2", width: 1920, height: 1280, icon: "rectangle", ratio: "3:2"),
     ]
+    
+    static var presets: [SocialMediaPreset] { _presets }
     
     static var groupedByPlatform: [String: [SocialMediaPreset]] {
         Dictionary(grouping: presets) { $0.platform }
@@ -451,8 +439,8 @@ struct ScreenshotStyleConfig: Equatable {
     // Mockup
     var mockupStyle: MockupStyle = .defaultStyle
     var showMockup: Bool = true
-    var mockupBorderSize: CGFloat = 3 // Taille du contour du style (0-10)
-    var borderColor: Color = Color(hex: "2d2d2d") // Couleur du border personnalisable
+    var mockupBorderSize: CGFloat = 3
+    var borderColor: Color = Color(hex: "2d2d2d")
     
     // Border
     var borderStyle: BorderStyle = .curved
@@ -460,17 +448,17 @@ struct ScreenshotStyleConfig: Equatable {
     
     // Transform
     var rotation: Double = 0
-    var imageScale: CGFloat = 100 // Scale of the screenshot itself (100 = 100%)
-    var screenshotOffset: CGSize = .zero // Offset to move screenshot within the canvas
+    var imageScale: CGFloat = 100
+    var screenshotOffset: CGSize = .zero
     
     // 3D Transform
-    var rotationX: Double = 0 // Rotation autour de l'axe X en degrés
-    var rotationY: Double = 0 // Rotation autour de l'axe Y en degrés
-    var perspective: Double = 0 // Perspective (0-1000, plus élevé = plus de perspective)
+    var rotationX: Double = 0
+    var rotationY: Double = 0
+    var perspective: Double = 0
     
     // Background
     var backgroundType: BackgroundType = .image
-    var selectedMagicPreset: MagicPreset? = nil // Pas de preset par défaut
+    var selectedMagicPreset: MagicPreset? = nil
     var selectedShadowScene: ShadowScene? = nil
     var selectedSolidColor: SolidColor? = nil
     var selectedGradient: GradientPreset? = nil
@@ -482,8 +470,8 @@ struct ScreenshotStyleConfig: Equatable {
     var selectedGradientPreset: SimpleGradientPreset? = SimpleGradientPreset.presets.first
     
     // Background Effects
-    var backgroundNoise: Double = 0 // 0-100
-    var backgroundBlur: Double = 0 // 0-100
+    var backgroundNoise: Double = 0
+    var backgroundBlur: Double = 0
     
     // Shadow Scene
     var shadowSceneMode: ShadowSceneMode = .underlay
@@ -492,7 +480,7 @@ struct ScreenshotStyleConfig: Equatable {
     // Text Overlays
     var textOverlays: [TextOverlay] = []
     
-    // Redact/Blur regions (for sensitive text)
+    // Redact/Blur regions
     var redactEnabled: Bool = false
     var redactStyle: RedactStyle = .blur
     var redactRegions: [RedactRegion] = []
@@ -504,8 +492,69 @@ struct ScreenshotStyleConfig: Equatable {
     var padding: CGFloat = 80
     var zoom: CGFloat = 100
     
-    // Export Scale (moved to transform section in UI)
+    // Export Scale
     var scale: CGFloat = 1.0
     
     static let `default` = ScreenshotStyleConfig()
+    
+    // MARK: - Transform Hash (for consolidated animations)
+    /// Hash des propriétés de transformation pour une seule animation consolidée
+    var transformHash: Int {
+        var hasher = Hasher()
+        hasher.combine(rotation)
+        hasher.combine(rotationX)
+        hasher.combine(rotationY)
+        hasher.combine(scale)
+        hasher.combine(imageScale)
+        hasher.combine(borderRadius)
+        return hasher.finalize()
+    }
+    
+    // MARK: - Render Hash (for cache invalidation)
+    /// Hash des propriétés qui affectent le rendu final (pour invalidation du cache)
+    var renderHash: Int {
+        var hasher = Hasher()
+        hasher.combine(mockupStyle)
+        hasher.combine(mockupBorderSize)
+        hasher.combine(borderRadius)
+        hasher.combine(rotation)
+        hasher.combine(rotationX)
+        hasher.combine(rotationY)
+        hasher.combine(scale)
+        hasher.combine(imageScale)
+        hasher.combine(backgroundType)
+        hasher.combine(backgroundImageURL)
+        hasher.combine(gradientConfig.style)
+        hasher.combine(gradientConfig.angle)
+        hasher.combine(gradientConfig.blurAmount)
+        hasher.combine(gradientConfig.saturation)
+        hasher.combine(gradientConfig.brightness)
+        hasher.combine(padding)
+        hasher.combine(selectedSocialPreset?.id)
+        return hasher.finalize()
+    }
+    
+    // MARK: - Optimized Equatable (only compare what matters for rendering)
+    static func == (lhs: ScreenshotStyleConfig, rhs: ScreenshotStyleConfig) -> Bool {
+        // Quick check with render hash first
+        guard lhs.renderHash == rhs.renderHash else { return false }
+        
+        // Full comparison for remaining properties
+        return lhs.mockupStyle == rhs.mockupStyle &&
+               lhs.showMockup == rhs.showMockup &&
+               lhs.mockupBorderSize == rhs.mockupBorderSize &&
+               lhs.borderRadius == rhs.borderRadius &&
+               lhs.rotation == rhs.rotation &&
+               lhs.rotationX == rhs.rotationX &&
+               lhs.rotationY == rhs.rotationY &&
+               lhs.scale == rhs.scale &&
+               lhs.imageScale == rhs.imageScale &&
+               lhs.backgroundType == rhs.backgroundType &&
+               lhs.backgroundImageURL == rhs.backgroundImageURL &&
+               lhs.gradientConfig == rhs.gradientConfig &&
+               lhs.padding == rhs.padding &&
+               lhs.zoom == rhs.zoom &&
+               lhs.screenshotOffset == rhs.screenshotOffset &&
+               lhs.selectedSocialPreset?.id == rhs.selectedSocialPreset?.id
+    }
 }

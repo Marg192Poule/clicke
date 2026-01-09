@@ -1,127 +1,113 @@
 import SwiftUI
 import AppKit
-import AVFoundation
 
-class ScreenshotRenderer {
+// MARK: - ScreenshotRenderer
+/// Renderer optimisé pour l'export de screenshots
+final class ScreenshotRenderer {
     let image: NSImage
     let config: ScreenshotStyleConfig
-
+    
+    // MARK: - Scale dynamique basé sur la taille de sortie
+    private var optimalScale: CGFloat {
+        let outputWidth = calculateOutputSize().width
+        
+        // Ajuster le scale en fonction de la taille de sortie
+        // Plus l'image est grande, moins on a besoin de scale élevé
+        if outputWidth > 3000 {
+            return 1.0  // 4K+ : pas besoin de upscale
+        } else if outputWidth > 2000 {
+            return 1.5  // 2K-4K : léger upscale
+        } else {
+            return 2.0  // Standard : upscale x2 pour la qualité
+        }
+    }
+    
     init(image: NSImage, config: ScreenshotStyleConfig) {
         self.image = image
         self.config = config
     }
     
+    // MARK: - Render
     func render() -> NSImage? {
-        // Create config for clean export (zoom at 100%, no offset)
         var exportConfig = config
         exportConfig.zoom = 100
         
-        // Preload background image synchronously if needed
+        // Précharger l'image de fond via le service centralisé
         var preloadedBackgroundImage: NSImage? = nil
         if config.backgroundType == .image, let url = config.backgroundImageURL {
-            preloadedBackgroundImage = loadBackgroundImage(from: url)
+            preloadedBackgroundImage = ImageLoadingService.shared.loadImageSync(from: url)
         }
         
-        // Create the preview canvas view with isRendering=true for transparent background
         let view = ScreenshotPreviewCanvas(
             image: image,
             config: exportConfig,
-            isDragging: .init(get: { false }, set: { _ in }),
+            isDragging: .constant(false),
             isRendering: true,
             preloadedBackgroundImage: preloadedBackgroundImage
         )
         
-        // Calculate size
+        let outputSize = calculateOutputSize()
+        let sizedView = view.frame(width: outputSize.width, height: outputSize.height)
+        
+        let renderer = ImageRenderer(content: sizedView)
+        renderer.scale = optimalScale
+        
+        guard let cgImage = renderer.cgImage else { return nil }
+        
+        return NSImage(cgImage: cgImage, size: outputSize)
+    }
+    
+    // MARK: - Async Render (préféré pour les grandes images)
+    func renderAsync() async -> NSImage? {
+        var exportConfig = config
+        exportConfig.zoom = 100
+        
+        // Précharger l'image de fond de manière asynchrone
+        var preloadedBackgroundImage: NSImage? = nil
+        if config.backgroundType == .image, let url = config.backgroundImageURL {
+            preloadedBackgroundImage = await ImageLoadingService.shared.loadImage(from: url)
+        }
+        
+        return await MainActor.run {
+            let view = ScreenshotPreviewCanvas(
+                image: image,
+                config: exportConfig,
+                isDragging: .constant(false),
+                isRendering: true,
+                preloadedBackgroundImage: preloadedBackgroundImage
+            )
+            
+            let outputSize = calculateOutputSize()
+            let sizedView = view.frame(width: outputSize.width, height: outputSize.height)
+            
+            let renderer = ImageRenderer(content: sizedView)
+            renderer.scale = optimalScale
+            
+            guard let cgImage = renderer.cgImage else { return nil }
+            
+            return NSImage(cgImage: cgImage, size: outputSize)
+        }
+    }
+    
+    // MARK: - Size Calculations
+    
+    private func calculateOutputSize() -> CGSize {
         let mockupPadding = mockupExtraPadding()
         let baseWidth = image.size.width + config.padding * 2 + mockupPadding.width
         let baseHeight = image.size.height + config.padding * 2 + mockupPadding.height
         
-        // Account for rotation
+        // Si un preset social est sélectionné, utiliser ses dimensions
+        if let preset = config.selectedSocialPreset {
+            return CGSize(width: CGFloat(preset.width), height: CGFloat(preset.height))
+        }
+        
+        // Tenir compte de la rotation
         let rotatedSize = calculateRotatedSize(width: baseWidth, height: baseHeight, rotation: config.rotation)
         
-        let width = rotatedSize.width * config.scale
-        let height = rotatedSize.height * config.scale
-        
-        let sizedView = view.frame(width: width, height: height)
-        
-        let renderer = ImageRenderer(content: sizedView)
-        renderer.scale = 2.0
-        
-        guard let cgImage = renderer.cgImage else { return nil }
-        
-        return NSImage(cgImage: cgImage, size: NSSize(width: width, height: height))
-    }
-    
-    // MARK: - Background Image Loading
-    private func loadBackgroundImage(from url: URL) -> NSImage? {
-        let videoExtensions = ["mov", "mp4"]
-        let isVideo = videoExtensions.contains(url.pathExtension.lowercased())
-        
-        if isVideo {
-            return extractFrameFromVideo(url: url)
-        } else {
-            return loadImageFromFile(url: url)
-        }
-    }
-    
-    private func loadImageFromFile(url: URL) -> NSImage? {
-        let ext = url.pathExtension.lowercased()
-        
-        // For HEIC files, use CIImage for better compatibility
-        if ext == "heic" || ext == "heif" {
-            guard let ciImage = CIImage(contentsOf: url) else { return nil }
-            let context = CIContext(options: [.useSoftwareRenderer: false, .cacheIntermediates: false])
-            guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else { return nil }
-            return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
-        }
-        
-        // Standard image loading
-        guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else {
-            return NSImage(contentsOf: url)
-        }
-        return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
-    }
-    
-    private func extractFrameFromVideo(url: URL) -> NSImage? {
-        let asset = AVURLAsset(url: url)
-        let generator = AVAssetImageGenerator(asset: asset)
-        generator.appliesPreferredTrackTransform = true
-        generator.requestedTimeToleranceAfter = CMTime.zero
-        generator.requestedTimeToleranceBefore = CMTime.zero
-        generator.maximumSize = CGSize(width: 3840, height: 2160)
-        
-        let time = CMTime(seconds: 1, preferredTimescale: 600)
-        
-        let semaphore = DispatchSemaphore(value: 0)
-        var resultImage: NSImage? = nil
-        
-        generator.generateCGImageAsynchronously(for: time) { cgImage, actualTime, error in
-            if let cgImage = cgImage {
-                resultImage = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
-            }
-            semaphore.signal()
-        }
-        
-        semaphore.wait()
-        
-        if let image = resultImage {
-            return image
-        }
-        
-        // Try at 0 seconds if first attempt failed
-        let semaphore2 = DispatchSemaphore(value: 0)
-        resultImage = nil
-        
-        generator.generateCGImageAsynchronously(for: .zero) { cgImage, actualTime, error in
-            if let cgImage = cgImage {
-                resultImage = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
-            }
-            semaphore2.signal()
-        }
-        
-        semaphore2.wait()
-        return resultImage
+        return CGSize(
+            width: rotatedSize.width * config.scale,
+            height: rotatedSize.height * config.scale
+        )
     }
     
     private func calculateRotatedSize(width: CGFloat, height: CGFloat, rotation: Double) -> CGSize {
@@ -129,10 +115,10 @@ class ScreenshotRenderer {
         let cos = abs(Darwin.cos(radians))
         let sin = abs(Darwin.sin(radians))
         
-        let newWidth = width * cos + height * sin
-        let newHeight = width * sin + height * cos
-        
-        return CGSize(width: newWidth, height: newHeight)
+        return CGSize(
+            width: width * cos + height * sin,
+            height: width * sin + height * cos
+        )
     }
     
     private func mockupExtraPadding() -> CGSize {
