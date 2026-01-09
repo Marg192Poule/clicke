@@ -279,9 +279,7 @@ struct ScreenshotEditorView: View {
             LabeledContent("rotation") {
                 HStack(spacing: 4) {
                     Button {
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
-                            viewModel.config.rotation -= 90
-                        }
+                        viewModel.config.rotation -= 90
                     } label: {
                         Image(systemName: "rotate.left")
                     }
@@ -293,9 +291,7 @@ struct ScreenshotEditorView: View {
                         .frame(width: 36)
                     
                     Button {
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
-                            viewModel.config.rotation += 90
-                        }
+                        viewModel.config.rotation += 90
                     } label: {
                         Image(systemName: "rotate.right")
                     }
@@ -478,28 +474,27 @@ struct ScreenshotEditorView: View {
         colorPanel.color = currentNSColor
         colorPanel.isContinuous = true
         
+        // Capturer une référence locale pour éviter les problèmes de concurrence Swift 6
+        let vm = viewModel
+        
         colorPanelObserver = NotificationCenter.default.addObserver(
             forName: NSColorPanel.colorDidChangeNotification,
             object: colorPanel,
             queue: .main
         ) { _ in
-            self.viewModel.config.customColor = Color(nsColor: colorPanel.color)
-            
-            if self.viewModel.config.customColor != .clear {
-                self.viewModel.config.selectedMagicPreset = nil
-                self.viewModel.config.selectedGradient = nil
-                self.viewModel.config.selectedSolidColor = nil
-                self.viewModel.config.backgroundImageURL = nil
+            Task { @MainActor in
+                vm.config.customColor = Color(nsColor: colorPanel.color)
+                
+                if vm.config.customColor != .clear {
+                    vm.config.selectedMagicPreset = nil
+                    vm.config.selectedGradient = nil
+                    vm.config.selectedSolidColor = nil
+                    vm.config.backgroundImageURL = nil
+                }
             }
         }
         
-        colorPanelCloseObserver = NotificationCenter.default.addObserver(
-            forName: NSWindow.willCloseNotification,
-            object: colorPanel,
-            queue: .main
-        ) { _ in
-            self.cleanupObservers()
-        }
+        // Note: Le cleanup des observers se fait via onDisappear
         
         colorPanel.orderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -569,9 +564,7 @@ struct ScreenshotEditorView: View {
                 ForEach(GradientStyle.allCases) { style in
                     let isSelected = viewModel.config.gradientConfig.style == style
                     Button {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            viewModel.config.gradientConfig.style = style
-                        }
+                        viewModel.config.gradientConfig.style = style
                     } label: {
                         Text(style.displayName)
                             .font(.system(size: 11, weight: isSelected ? .semibold : .regular))
@@ -607,9 +600,7 @@ struct ScreenshotEditorView: View {
                 Spacer()
                 
                 Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        viewModel.config.gradientConfig.useThreeColors.toggle()
-                    }
+                    viewModel.config.gradientConfig.useThreeColors.toggle()
                 } label: {
                     Image(systemName: viewModel.config.gradientConfig.useThreeColors ? "3.circle.fill" : "2.circle.fill")
                 }
@@ -617,9 +608,7 @@ struct ScreenshotEditorView: View {
                 .help(viewModel.config.gradientConfig.useThreeColors ? "Use 2 colors" : "Use 3 colors")
                 
                 Button {
-                    withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
-                        viewModel.randomizeGradient()
-                    }
+                    viewModel.randomizeGradient()
                 } label: {
                     Image(systemName: "dice.fill")
                 }
@@ -691,7 +680,7 @@ struct ScreenshotEditorView: View {
                 ) { newOffset in
                     viewModel.config.screenshotOffset = newOffset
                 }
-                .id("canvas-\(viewModel.config.showMockup)-\(viewModel.config.mockupStyle.rawValue)")
+                // Pas de .id() ici - évite de recréer la vue et le flash blanc
                 .scaleEffect(viewModel.config.zoom / 100)
                 .animation(.easeOut(duration: 0.15), value: viewModel.config.zoom)
                 .position(
@@ -704,15 +693,26 @@ struct ScreenshotEditorView: View {
             .simultaneousGesture(magnifyGesture)
             .onAppear {
                 viewModel.canvasSize = geo.size
-                viewModel.calculateFitZoom()
+                // Différer le calcul pour éviter le cycle de layout
+                DispatchQueue.main.async {
+                    viewModel.calculateFitZoom()
+                }
             }
             .onChange(of: geo.size) { _, new in
+                // Éviter les appels répétés si la taille n'a pas vraiment changé
+                guard abs(viewModel.canvasSize.width - new.width) > 1 ||
+                      abs(viewModel.canvasSize.height - new.height) > 1 else { return }
+                
                 let oldOffset = viewModel.offset
                 let oldLastOffset = viewModel.lastOffset
                 viewModel.canvasSize = new
-                viewModel.calculateFitZoom()
-                viewModel.offset = oldOffset
-                viewModel.lastOffset = oldLastOffset
+                
+                // Différer pour éviter le cycle de layout récursif
+                DispatchQueue.main.async {
+                    viewModel.calculateFitZoom()
+                    viewModel.offset = oldOffset
+                    viewModel.lastOffset = oldLastOffset
+                }
             }
         }
         .ignoresSafeArea()
@@ -803,15 +803,13 @@ struct ScreenshotEditorView: View {
     private func gradientPresetButton(_ preset: SimpleGradientPreset) -> some View {
         let isSelected = viewModel.config.selectedGradientPreset?.id == preset.id
         return Button {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                let effects = viewModel.config.gradientConfig
-                viewModel.config.gradientConfig = preset.config
-                viewModel.config.gradientConfig.blurAmount = effects.blurAmount
-                viewModel.config.gradientConfig.noiseAmount = effects.noiseAmount
-                viewModel.config.gradientConfig.saturation = effects.saturation
-                viewModel.config.gradientConfig.brightness = effects.brightness
-                viewModel.config.selectedGradientPreset = preset
-            }
+            let effects = viewModel.config.gradientConfig
+            viewModel.config.gradientConfig = preset.config
+            viewModel.config.gradientConfig.blurAmount = effects.blurAmount
+            viewModel.config.gradientConfig.noiseAmount = effects.noiseAmount
+            viewModel.config.gradientConfig.saturation = effects.saturation
+            viewModel.config.gradientConfig.brightness = effects.brightness
+            viewModel.config.selectedGradientPreset = preset
         } label: {
             preset.config.previewView(size: CGSize(width: 48, height: 32))
                 .clipShape(RoundedRectangle(cornerRadius: 6))

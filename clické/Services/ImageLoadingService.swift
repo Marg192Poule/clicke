@@ -27,25 +27,30 @@ actor ImageLoadingService {
     /// Charge une image depuis une URL (supporte HEIC, images standard et vidéos)
     /// - Parameters:
     ///   - url: URL du fichier
-    ///   - maxDimension: Dimension maximale pour le redimensionnement (nil = taille originale)
+    ///   - maxDimension: Dimension maximale pour le redimensionnement (nil = taille originale, max 4096 recommandé)
     /// - Returns: L'image chargée ou nil
     func loadImage(from url: URL, maxDimension: CGFloat? = nil) async -> NSImage? {
         let videoExtensions = ["mov", "mp4", "m4v"]
         let isVideo = videoExtensions.contains(url.pathExtension.lowercased())
         
-        let image: NSImage?
+        // Pour les vidéos, extraire une frame
         if isVideo {
-            image = await extractFrameFromVideo(url: url)
-        } else {
-            image = loadImageFromFile(url: url)
+            let image = await extractFrameFromVideo(url: url)
+            if let maxDim = maxDimension, let img = image {
+                return resizeImage(img, maxDimension: maxDim)
+            }
+            return image
         }
         
-        // Redimensionner si nécessaire
-        if let maxDim = maxDimension, let img = image {
-            return resizeImage(img, maxDimension: maxDim)
+        // Pour les images avec une taille max, utiliser le chargement optimisé
+        // Cela évite de charger l'image complète en mémoire (évite les erreurs IOSurface)
+        // CGImageSource supporte HEIC sur macOS, donc on peut utiliser la même approche
+        if let maxDim = maxDimension {
+            return loadImageWithMaxSize(from: url, maxPixelSize: maxDim)
         }
         
-        return image
+        // Sans limite de taille, charger normalement
+        return loadImageFromFile(url: url)
     }
     
     /// Charge une image depuis un fichier avec support HEIC optimisé
@@ -70,24 +75,35 @@ actor ImageLoadingService {
     }
     
     private func loadStandardImage(from url: URL) -> NSImage? {
-        // Options pour forcer le chargement en pleine résolution
-        let options: [CFString: Any] = [
-            kCGImageSourceShouldCache: true,
-            kCGImageSourceShouldAllowFloat: true
-        ]
-        
-        guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, options as CFDictionary) else {
+        guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil) else {
             return NSImage(contentsOf: url)
         }
         
-        // Options pour l'extraction de l'image - forcer la pleine résolution
-        let imageOptions: [CFString: Any] = [
-            kCGImageSourceShouldCacheImmediately: true,
-            kCGImageSourceCreateThumbnailFromImageAlways: false
+        guard let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else {
+            return NSImage(contentsOf: url)
+        }
+        
+        return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+    }
+    
+    /// Charge une image avec une taille maximale (évite les erreurs IOSurface)
+    private func loadImageWithMaxSize(from url: URL, maxPixelSize: CGFloat) -> NSImage? {
+        guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+            return NSImage(contentsOf: url)
+        }
+        
+        // Utiliser CGImageSource pour créer directement un thumbnail à la bonne taille
+        // Cela évite de charger l'image complète en mémoire
+        let options: [CFString: Any] = [
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true
         ]
         
-        guard let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, imageOptions as CFDictionary) else {
-            return NSImage(contentsOf: url)
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary) else {
+            // Fallback: charger normalement
+            return loadStandardImage(from: url)
         }
         
         return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))

@@ -170,14 +170,14 @@ struct ScreenshotPreviewCanvas: View {
         if let preset = config.selectedSocialPreset {
             return CGFloat(preset.width)
         }
-        return image.size.width + config.padding * 2 + extraPadding.width
+        return image.size.width + config.padding * 2
     }
     
     private var totalHeight: CGFloat {
         if let preset = config.selectedSocialPreset {
             return CGFloat(preset.height)
         }
-        return image.size.height + config.padding * 2 + extraPadding.height
+        return image.size.height + config.padding * 2
     }
     
     private var socialPresetImageScale: CGFloat {
@@ -195,18 +195,6 @@ struct ScreenshotPreviewCanvas: View {
         let scaleY = availableHeight / imageHeight
         
         return min(scaleX, scaleY, 1.0) * (config.imageScale / 100)
-    }
-    
-    private var extraPadding: CGSize {
-        guard config.showMockup else { return .zero }
-        
-        switch config.mockupStyle {
-        case .defaultStyle:
-            return .zero
-        case .glassEffect, .border:
-            let size = config.mockupBorderSize * 3 * 2
-            return CGSize(width: size, height: size)
-        }
     }
     
     // MARK: - Screenshot Content
@@ -300,7 +288,7 @@ struct ScreenshotPreviewCanvas: View {
         .saturation(config.gradientConfig.saturation / 100)
         .brightness((config.gradientConfig.brightness - 100) / 100)
         .onChange(of: config.backgroundImageURL?.absoluteString) { _, newValue in
-            loadedBackgroundImage = nil
+            // Ne PAS mettre loadedBackgroundImage à nil - garder l'ancien fond pendant le chargement
             if let urlString = newValue, let newURL = URL(string: urlString) {
                 loadBackgroundImageAsync(from: newURL)
             }
@@ -317,8 +305,9 @@ struct ScreenshotPreviewCanvas: View {
         currentLoadingURL = url
         
         Task {
-            // Charger en pleine résolution pour une qualité optimale sur écrans Retina/5K
-            let image = await ImageLoadingService.shared.loadImage(from: url, maxDimension: nil)
+            // Limiter à 4096px max pour éviter les erreurs IOSurface (limite GPU)
+            // 4096x4096 = 64 millions de pixels, suffisant pour écrans 5K
+            let image = await ImageLoadingService.shared.loadImage(from: url, maxDimension: 4096)
             
             // Vérifier que l'URL n'a pas changé pendant le chargement
             await MainActor.run {

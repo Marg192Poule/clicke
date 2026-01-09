@@ -32,10 +32,10 @@ final class ScreenshotRenderer {
         var exportConfig = config
         exportConfig.zoom = 100
         
-        // Précharger l'image de fond via le service centralisé
+        // Précharger l'image de fond via le service centralisé (max 8K pour export)
         var preloadedBackgroundImage: NSImage? = nil
         if config.backgroundType == .image, let url = config.backgroundImageURL {
-            preloadedBackgroundImage = ImageLoadingService.shared.loadImageSync(from: url)
+            preloadedBackgroundImage = ImageLoadingService.shared.loadImageSync(from: url, maxDimension: 8192)
         }
         
         let view = ScreenshotPreviewCanvas(
@@ -62,10 +62,10 @@ final class ScreenshotRenderer {
         var exportConfig = config
         exportConfig.zoom = 100
         
-        // Précharger l'image de fond de manière asynchrone
+        // Précharger l'image de fond de manière asynchrone (max 8K pour export)
         var preloadedBackgroundImage: NSImage? = nil
         if config.backgroundType == .image, let url = config.backgroundImageURL {
-            preloadedBackgroundImage = await ImageLoadingService.shared.loadImage(from: url)
+            preloadedBackgroundImage = await ImageLoadingService.shared.loadImage(from: url, maxDimension: 8192)
         }
         
         return await MainActor.run {
