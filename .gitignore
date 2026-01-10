@@ -1,19 +1,8 @@
-# Xcode
-#
-# gitignore contributors: remember to update Global/Xcode.gitignore, Objective-C.gitignore & Swift.gitignore
-
-## User settings
 xcuserdata/
-
-## Compatibility with Xcode 8 and earlier (Xcode 9 uses this folder)
 *.xcscmblueprint
 *.xccheckout
-
-## Build generated
 build/
 DerivedData/
-
-## Various settings
 *.pbxuser
 !default.pbxuser
 *.mode1v3
@@ -26,72 +15,34 @@ DerivedData/
 *.ipa
 *.dSYM.zip
 *.dSYM
-
-## Obj-C/Swift specific
 *.moved-aside
-
-## Playgrounds
 timeline.xctimeline
 playground.xcworkspace
-
-## Swift Package Manager
-#
-# Add this line if you want to avoid checking in source code from Swift Package Manager dependencies.
-# Packages/
-# Package.pins
-# Package.resolved
-# *.xcodeproj
-#
-# Xcode automatically generates this directory with a hierarchical structure of pure Swift PM projects
 .swiftpm/
 .build/
-
-## CocoaPods
-# We recommend against adding the Pods directory to your .gitignore.
-# However, you should judge for yourself.
 Pods/
-
-# Carthage
 Carthage/Build/
 Carthage/Checkouts/
-
-# Accio dependency management
 Dependencies/
 .accio/
-
-# fastlane
 fastlane/report.xml
 fastlane/Preview.html
 fastlane/screenshots/**/*.png
 fastlane/test_output
-
-# Code Injection
 iOSInjectionProject/
-
-# macOS
 .DS_Store
 .AppleDouble
 .LSOverride
 ._*
-
-# Thumbnails
 Thumbs.db
-
-# Archives
 *.zip
 *.tar.gz
 *.rar
-
-# Temporary files
 *.tmp
 *.temp
 *~
-
-# IDE specific
 .idea/
 *.swp
 *.swo
 .vscode/
-
-# App bundles (built app)
 *.app

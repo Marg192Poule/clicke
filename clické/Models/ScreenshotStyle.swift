@@ -469,10 +469,6 @@ struct ScreenshotStyleConfig: Equatable {
     var gradientConfig: SimpleGradientConfig = SimpleGradientPreset.presets.first?.config ?? .default
     var selectedGradientPreset: SimpleGradientPreset? = SimpleGradientPreset.presets.first
     
-    // Background Effects
-    var backgroundNoise: Double = 0
-    var backgroundBlur: Double = 0
-    
     // Shadow Scene
     var shadowSceneMode: ShadowSceneMode = .underlay
     var shadowSceneOpacity: Double = 80

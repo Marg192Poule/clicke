@@ -2,12 +2,6 @@ import SwiftUI
 
 // MARK: - Noise Effect Extension
 extension View {
-    /// Apply noise overlay effect using Metal shader
-    /// - Parameter intensity: Noise intensity from 0 to 1
-    func noiseEffect(intensity: Double) -> some View {
-        self.modifier(NoiseEffectModifier(intensity: intensity))
-    }
-    
     /// Apply noise as overlay layer (for use on blurred backgrounds)
     /// - Parameter intensity: Noise intensity from 0 to 1
     func noiseOverlay(intensity: Double) -> some View {
@@ -20,23 +14,6 @@ extension View {
     ///   - brightness: Brightness offset (-1.0 to 1.0, 0.0 = normal)
     func colorAdjustments(saturation: Double, brightness: Double) -> some View {
         self.modifier(ColorAdjustmentsModifier(saturation: saturation, brightness: brightness))
-    }
-}
-
-struct NoiseEffectModifier: ViewModifier {
-    let intensity: Double
-    
-    func body(content: Content) -> some View {
-        if intensity > 0 {
-            content
-                .colorEffect(
-                    ShaderLibrary.noise(
-                        .float(intensity)
-                    )
-                )
-        } else {
-            content
-        }
     }
 }
 

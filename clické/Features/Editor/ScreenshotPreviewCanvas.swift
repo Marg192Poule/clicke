@@ -394,18 +394,6 @@ struct CheckerboardView: View {
     }
 }
 
-// MARK: - Noise View (GPU-accelerated)
-struct NoiseView: View {
-    let intensity: Double
-    
-    var body: some View {
-        Rectangle()
-            .fill(Color.clear)
-            .noiseOverlay(intensity: intensity)
-            .allowsHitTesting(false)
-    }
-}
-
 // MARK: - Pixelate View (GPU-accelerated)
 struct PixelateView: View {
     var body: some View {
