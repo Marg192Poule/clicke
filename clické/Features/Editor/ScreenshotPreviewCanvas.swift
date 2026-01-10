@@ -252,8 +252,6 @@ struct ScreenshotPreviewCanvas: View {
                 config.customColor
             }
         }
-        .saturation(isRendering ? config.gradientConfig.saturation / 100 : 1.0)
-        .brightness(isRendering ? (config.gradientConfig.brightness - 100) / 100 : 0.0)
         .colorAdjustments(
             saturation: isRendering ? 1.0 : config.gradientConfig.saturation / 100,
             brightness: isRendering ? 0.0 : (config.gradientConfig.brightness - 100) / 100
@@ -285,8 +283,10 @@ struct ScreenshotPreviewCanvas: View {
                 colorBackground
             }
         }
-        .saturation(config.gradientConfig.saturation / 100)
-        .brightness((config.gradientConfig.brightness - 100) / 100)
+        .colorAdjustments(
+            saturation: config.gradientConfig.saturation / 100,
+            brightness: (config.gradientConfig.brightness - 100) / 100
+        )
         .onChange(of: config.backgroundImageURL?.absoluteString) { _, newValue in
             // Ne PAS mettre loadedBackgroundImage à nil - garder l'ancien fond pendant le chargement
             if let urlString = newValue, let newURL = URL(string: urlString) {

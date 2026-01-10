@@ -869,6 +869,8 @@ struct ScreenshotEditorView: View {
 
 // MARK: - Optimized Generic Slider
 /// Slider générique optimisé supportant Double et CGFloat
+/// Utilise une valeur locale pendant le glissement pour éviter les re-rendus coûteux,
+/// puis synchronise avec le binding uniquement au relâchement.
 struct OptimizedSlider<T: BinaryFloatingPoint>: View where T.Stride: BinaryFloatingPoint {
     @Binding var value: T
     let range: ClosedRange<T>
@@ -877,6 +879,30 @@ struct OptimizedSlider<T: BinaryFloatingPoint>: View where T.Stride: BinaryFloat
     var showValue: Bool = false
     var unit: String = ""
     var decimals: Int = 0
+    
+    // État local pour le glissement fluide
+    @State private var localValue: T
+    @State private var isDragging: Bool = false
+    
+    init(
+        value: Binding<T>,
+        range: ClosedRange<T>,
+        defaultValue: T,
+        step: T? = nil,
+        showValue: Bool = false,
+        unit: String = "",
+        decimals: Int = 0
+    ) {
+        self._value = value
+        self.range = range
+        self.defaultValue = defaultValue
+        self.step = step
+        self.showValue = showValue
+        self.unit = unit
+        self.decimals = decimals
+        // Initialiser la valeur locale avec la valeur du binding
+        self._localValue = State(initialValue: value.wrappedValue)
+    }
     
     var body: some View {
         HStack(spacing: 4) {
@@ -893,21 +919,37 @@ struct OptimizedSlider<T: BinaryFloatingPoint>: View where T.Stride: BinaryFloat
                 .frame(height: 20)
                 
                 if let step = step {
-                    Slider(value: $value, in: range, step: T.Stride(step))
+                    Slider(value: $localValue, in: range, step: T.Stride(step), onEditingChanged: handleEditingChanged)
                 } else {
-                    Slider(value: $value, in: range)
+                    Slider(value: $localValue, in: range, onEditingChanged: handleEditingChanged)
                 }
             }
             .frame(width: 100)
             
             if showValue {
-                Text(formatValue(value) + unit)
+                // Afficher la valeur locale pour un feedback immédiat
+                Text(formatValue(localValue) + unit)
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(.tertiary)
                     .frame(width: unit.isEmpty ? 28 : 36, alignment: .trailing)
                     .contentTransition(.numericText())
-                    .animation(.snappy(duration: 0.15), value: Double(value))
+                    .animation(.snappy(duration: 0.15), value: Double(localValue))
             }
+        }
+        .onChange(of: value) { _, newValue in
+            // Synchroniser la valeur externe vers locale seulement si on ne glisse pas
+            if !isDragging {
+                localValue = newValue
+            }
+        }
+    }
+    
+    /// Gère le changement d'état du glissement
+    private func handleEditingChanged(_ editing: Bool) {
+        isDragging = editing
+        if !editing {
+            // Synchroniser vers le binding au relâchement
+            value = localValue
         }
     }
     
