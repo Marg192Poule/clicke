@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 import ApplicationServices
 
-/// Vue principale avec sidebar (utilisée dans AppSettingsView)
+/// Main view with sidebar (used in AppSettingsView)
 struct SettingsContentView: View {
     @State private var settings: Settings = Settings.current
     @State private var isSettingHotKey = false
@@ -11,7 +11,7 @@ struct SettingsContentView: View {
     
     var body: some View {
         Form {
-            // Permissions Section (si nécessaire)
+            // Permissions Section (if needed)
             if !checkAccessibilityPermissions() {
                 PermissionsSectionView(showAlert: $showAccessibilityAlert)
             }
@@ -30,7 +30,7 @@ struct SettingsContentView: View {
                 currentModifiers: $currentModifiers
             )
             
-            // Apparence Section
+            // Appearance Section
             AppearanceSectionView(
                 showDockIcon: $settings.showDockIcon
             )
@@ -64,9 +64,9 @@ struct SettingsContentView: View {
         )
         .onChange(of: settings) { oldValue, newValue in
             Settings.current = newValue
-            // Notifier AppDelegate pour mettre à jour le hotkey
+            // Notify AppDelegate to update hotkey
             NotificationCenter.default.post(name: NSNotification.Name("HotkeyConfigurationChanged"), object: nil)
-            // Mettre à jour le dock icon
+            // Update dock icon
             NotificationCenter.default.post(name: NSNotification.Name("DockIconChanged"), object: nil)
         }
         .alert("Permissions Required", isPresented: $showAccessibilityAlert) {
@@ -82,7 +82,7 @@ struct SettingsContentView: View {
     }
 }
 
-/// Vue wrapper pour compatibilité (utilisée directement sans sidebar)
+/// Wrapper view for compatibility (used directly without sidebar)
 struct SettingsView: View {
     var body: some View {
         AppSettingsView()
@@ -91,7 +91,7 @@ struct SettingsView: View {
 
 
 
-/// Contenu de la section À propos
+/// About section content
 struct AboutContentView: View {
     var body: some View {
         Form {

@@ -20,7 +20,7 @@ struct ScreenshotPreviewCanvas: View {
             if config.backgroundType == .transparent {
                 backgroundView
             } else {
-                // Seulement appliquer drawingGroup si blur > 0 (sinon qualité dégradée)
+                // Only apply drawingGroup if blur > 0 (otherwise degraded quality)
                 if config.gradientConfig.blurAmount > 0 {
                     backgroundView
                         .blur(radius: config.gradientConfig.blurAmount)
@@ -288,7 +288,7 @@ struct ScreenshotPreviewCanvas: View {
             brightness: (config.gradientConfig.brightness - 100) / 100
         )
         .onChange(of: config.backgroundImageURL?.absoluteString) { _, newValue in
-            // Ne PAS mettre loadedBackgroundImage à nil - garder l'ancien fond pendant le chargement
+            // Do NOT set loadedBackgroundImage to nil - keep old background during loading
             if let urlString = newValue, let newURL = URL(string: urlString) {
                 loadBackgroundImageAsync(from: newURL)
             }
@@ -300,16 +300,16 @@ struct ScreenshotPreviewCanvas: View {
         }
     }
     
-    /// Charge l'image de fond de manière asynchrone via le service centralisé
+    /// Loads background image asynchronously via centralized service
     private func loadBackgroundImageAsync(from url: URL) {
         currentLoadingURL = url
         
         Task {
-            // Limiter à 4096px max pour éviter les erreurs IOSurface (limite GPU)
-            // 4096x4096 = 64 millions de pixels, suffisant pour écrans 5K
+            // Limit to 4096px max to avoid IOSurface errors (GPU limit)
+            // 4096x4096 = 64 million pixels, sufficient for 5K displays
             let image = await ImageLoadingService.shared.loadImage(from: url, maxDimension: 4096)
             
-            // Vérifier que l'URL n'a pas changé pendant le chargement
+            // Verify URL hasn't changed during loading
             await MainActor.run {
                 if currentLoadingURL == url {
                     loadedBackgroundImage = image

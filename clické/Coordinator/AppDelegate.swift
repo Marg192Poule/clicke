@@ -16,13 +16,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupMenuBar()
         
-        // Vérifier les permissions (sans les redemander automatiquement)
-        // On ne demande les permissions que si l'utilisateur clique explicitement sur un bouton
+        // Check permissions (without automatically re-requesting)
+        // Only request permissions when user explicitly clicks a button
         checkInitialPermissionsStatus()
         
         setupHotkeys()
         
-        // Écouter les changements de dock icon
+        // Listen for dock icon changes
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(dockIconChanged),
@@ -30,7 +30,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             object: nil
         )
         
-        // Écouter les changements de raccourci clavier
+        // Listen for keyboard shortcut changes
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(hotkeyChanged),
@@ -38,7 +38,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             object: nil
         )
         
-        // Écouter quand les permissions d'accessibilité sont accordées
+        // Listen for when accessibility permissions are granted
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(accessibilityPermissionsGranted),
@@ -46,7 +46,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             object: nil
         )
         
-        // Écouter quand l'application redevient active (pour détecter les changements de permissions)
+        // Listen for when app becomes active (to detect permission changes)
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(applicationDidBecomeActive),
@@ -54,59 +54,59 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             object: nil
         )
         
-        // Démarrer le polling continu des permissions
+        // Start continuous permissions polling
         startContinuousPermissionsCheck()
         
-        // Appliquer le paramètre initial
+        // Apply initial setting
         updateDockIconVisibility()
     }
     
-    /// Démarre une vérification continue des permissions en arrière-plan
+    /// Starts continuous background permissions checking
     private func startContinuousPermissionsCheck() {
-        // Initialiser les états initiaux (sans déclencher de popup)
+        // Initialize initial states (without triggering popup)
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: false]
         lastAccessibilityStatus = AXIsProcessTrustedWithOptions(options as CFDictionary)
         
         if #available(macOS 10.15, *) {
-            // Vérifier les permissions d'enregistrement d'écran (peut déclencher un popup la première fois)
-            // Mais on ne le fait qu'une seule fois au démarrage
+            // Check screen recording permissions (may trigger popup first time)
+            // But we only do this once at startup
             lastScreenRecordingStatus = CGPreflightScreenCaptureAccess()
         } else {
             lastScreenRecordingStatus = true
         }
         
-        // Si les permissions sont déjà accordées, réenregistrer les hotkeys immédiatement
+        // If permissions already granted, re-register hotkeys immediately
         if lastAccessibilityStatus {
             DispatchQueue.main.async { [weak self] in
                 self?.hotkeyManager.registerAllHotkeys()
             }
         }
         
-        // Créer un timer qui vérifie les permissions toutes les 1 seconde (moins agressif)
-        // On vérifie seulement pour détecter quand elles sont accordées, pas pour les redemander
+        // Create timer that checks permissions every 1 second (less aggressive)
+        // We only check to detect when they're granted, not to re-request them
         permissionsCheckTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.checkPermissionsStatus()
         }
         
-        // S'assurer que le timer fonctionne même quand l'app est en arrière-plan
+        // Ensure timer works even when app is in background
         RunLoop.current.add(permissionsCheckTimer!, forMode: .common)
     }
     
-    /// Vérifie le statut des permissions et réagit aux changements (sans redemander)
+    /// Checks permissions status and reacts to changes (without re-requesting)
     private func checkPermissionsStatus() {
-        // Vérifier les permissions d'accessibilité (sans déclencher de popup)
+        // Check accessibility permissions (without triggering popup)
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: false]
         let currentAccessibilityStatus = AXIsProcessTrustedWithOptions(options as CFDictionary)
         
-        // Pour l'enregistrement d'écran, on ne vérifie PAS à chaque fois car CGPreflightScreenCaptureAccess()
-        // peut déclencher un popup. On ne vérifie que si on pense qu'on n'a pas les permissions,
-        // et seulement toutes les 10 secondes pour éviter les popups répétés.
+        // For screen recording, we DON'T check every time because CGPreflightScreenCaptureAccess()
+        // can trigger a popup. We only check if we think we don't have permissions,
+        // and only every 10 seconds to avoid repeated popups.
         var currentScreenRecordingStatus = lastScreenRecordingStatus
         if !lastScreenRecordingStatus {
             if #available(macOS 10.15, *) {
                 let now = Date().timeIntervalSince1970
                 if let lastCheck = lastScreenRecordingCheckTime {
-                    // Vérifier seulement toutes les 10 secondes pour éviter les popups
+                    // Only check every 10 seconds to avoid popups
                     if now - lastCheck > 10.0 {
                         currentScreenRecordingStatus = CGPreflightScreenCaptureAccess()
                         lastScreenRecordingCheckTime = now
@@ -120,25 +120,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
         }
         
-        // Si les permissions d'accessibilité ont changé
+        // If accessibility permissions changed
         if currentAccessibilityStatus != lastAccessibilityStatus {
             lastAccessibilityStatus = currentAccessibilityStatus
             if currentAccessibilityStatus {
-                // Permissions accordées - réenregistrer les hotkeys
+                // Permissions granted - re-register hotkeys
                 DispatchQueue.main.async { [weak self] in
                     self?.hotkeyManager.registerAllHotkeys()
                     NotificationCenter.default.post(name: NSNotification.Name("AccessibilityPermissionsGranted"), object: nil)
                     NotificationCenter.default.post(name: NSNotification.Name("PermissionsStatusChanged"), object: nil)
                 }
             } else {
-                // Permissions retirées
+                // Permissions revoked
                 DispatchQueue.main.async {
                     NotificationCenter.default.post(name: NSNotification.Name("PermissionsStatusChanged"), object: nil)
                 }
             }
         }
         
-        // Si les permissions d'enregistrement d'écran ont changé
+        // If screen recording permissions changed
         if currentScreenRecordingStatus != lastScreenRecordingStatus {
             lastScreenRecordingStatus = currentScreenRecordingStatus
             DispatchQueue.main.async {
@@ -147,38 +147,38 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
     
-    /// Vérifie l'état initial des permissions (sans les redemander)
+    /// Checks initial permissions status (without re-requesting)
     private func checkInitialPermissionsStatus() {
-        // Vérifier les permissions d'accessibilité (sans déclencher de popup)
+        // Check accessibility permissions (without triggering popup)
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: false]
         let isTrusted = AXIsProcessTrustedWithOptions(options as CFDictionary)
         
         if isTrusted {
-            // Si les permissions sont déjà accordées, réenregistrer les hotkeys immédiatement
+            // If permissions already granted, re-register hotkeys immediately
             DispatchQueue.main.async { [weak self] in
                 self?.hotkeyManager.registerAllHotkeys()
             }
         }
         
-        // Vérifier les permissions d'enregistrement d'écran (sans déclencher de popup)
-        // On ne vérifie qu'une seule fois au démarrage pour éviter les popups répétés
+        // Check screen recording permissions (without triggering popup)
+        // We only check once at startup to avoid repeated popups
         if #available(macOS 10.15, *) {
             _ = CGPreflightScreenCaptureAccess()
         }
     }
     
     private func setupHotkeys() {
-        // Configurer le handler pour screenshot
+        // Configure handler for screenshot
         hotkeyManager.setScreenshotHotkeyHandler { [weak self] in
             self?.screenshotCapture()
         }
         
-        // Configurer le handler pour tab capture
+        // Configure handler for tab capture
         hotkeyManager.setTabCaptureHotkeyHandler { [weak self] in
             self?.tabCapture()
         }
         
-        // Enregistrer tous les hotkeys
+        // Register all hotkeys
         hotkeyManager.registerAllHotkeys()
     }
 
@@ -229,40 +229,40 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc private func screenshotCapture() {
-        // Vérifier les permissions avant de capturer
-        // Si les permissions ne sont pas accordées, on ne peut pas capturer
-        // Note: screencapture lui-même peut déclencher un popup si les permissions ne sont pas accordées
-        // mais on essaie de l'éviter en vérifiant d'abord
+        // Check permissions before capturing
+        // If permissions are not granted, we cannot capture
+        // Note: screencapture itself may trigger a popup if permissions are not granted
+        // but we try to avoid it by checking first
         
-        // Utiliser l'interface native de macOS
+        // Use macOS native interface
         let pasteboardCountBefore = NSPasteboard.general.changeCount
         
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-        task.arguments = ["-i", "-c", "-x"] // -i = interactif natif, -c = clipboard, -x = pas de son
+        task.arguments = ["-i", "-c", "-x"] // -i = native interactive, -c = clipboard, -x = no sound
         
         do {
             try task.run()
             task.waitUntilExit()
             
-            // Vérifier si une capture a été faite
+            // Check if a capture was made
             if NSPasteboard.general.changeCount != pasteboardCountBefore {
-                // Jouer le son de capture
+                // Play capture sound
                 playCaptureSound()
                 
-                // Récupérer l'image du presse-papier
+                // Get image from clipboard
                 if let image = NSPasteboard.general.readObjects(
                     forClasses: [NSImage.self],
                     options: nil
                 )?.first as? NSImage {
-                    // Afficher le toast interactif avec option Edit
+                    // Show interactive toast with Edit option
                     toastManager.showWithEditOption(
                         message: String(localized: "copied"),
                         icon: "doc.on.clipboard.fill",
                         screenshotImage: image
                     )
                 } else {
-                    // Fallback au toast simple
+                    // Fallback to simple toast
                     toastManager.show(
                         message: String(localized: "copied"),
                         icon: "doc.on.clipboard.fill",
@@ -280,12 +280,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
     
     @objc private func tabCapture() {
-        // Obtenir la fenêtre active et capturer seulement l'onglet/la fenêtre
+        // Get active window and capture only the tab/window
         let pasteboardCountBefore = NSPasteboard.general.changeCount
         
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-        task.arguments = ["-w", "-c", "-x"] // -w = window only, -c = clipboard, -x = pas de son
+        task.arguments = ["-w", "-c", "-x"] // -w = window only, -c = clipboard, -x = no sound
         
         do {
             try task.run()
@@ -381,18 +381,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
     
     @objc private func hotkeyChanged() {
-        // Réenregistrer tous les hotkeys avec les nouvelles configurations
+        // Re-register all hotkeys with new configurations
         hotkeyManager.registerAllHotkeys()
     }
     
     @objc private func accessibilityPermissionsGranted() {
-        // Les permissions ont été accordées - réenregistrer les hotkeys
+        // Permissions have been granted - re-register hotkeys
         hotkeyManager.registerAllHotkeys()
     }
     
     @objc private func applicationDidBecomeActive() {
-        // Vérifier immédiatement les permissions quand l'app redevient active
-        // (utile après avoir ouvert les paramètres système)
+        // Immediately check permissions when app becomes active
+        // (useful after opening system settings)
         checkPermissionsStatus()
     }
     

@@ -6,7 +6,7 @@ extension FileManager {
             .appendingPathComponent("Desktop")
             .appendingPathComponent("Screenshots")
         
-        // on verif si le dossier existe et sinon on le créer
+        // Check if directory exists and create it if not
         try? FileManager.default.createDirectory(at: url, 
                                                  withIntermediateDirectories: true)
         return url

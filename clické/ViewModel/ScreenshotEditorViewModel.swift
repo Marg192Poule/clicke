@@ -4,7 +4,7 @@ import AVFoundation
 internal import Combine
 
 // MARK: - Optimized Wallpaper Cache using NSCache
-/// Cache singleton utilisant NSCache pour la gestion automatique de la mémoire
+/// Singleton cache using NSCache for automatic memory management
 final class WallpaperCache {
     static let shared = WallpaperCache()
     
@@ -16,12 +16,12 @@ final class WallpaperCache {
     private var loadCallbacks: [() -> Void] = []
     
     private init() {
-        // Configurer les limites du cache (haute qualité)
-        thumbnailCache.countLimit = 50 // Max 50 images en cache
-        thumbnailCache.totalCostLimit = 150 * 1024 * 1024 // Max 150 MB pour images HD
+        // Configure cache limits (high quality)
+        thumbnailCache.countLimit = 50 // Max 50 images in cache
+        thumbnailCache.totalCostLimit = 150 * 1024 * 1024 // Max 150 MB for HD images
     }
     
-    /// Charge les wallpapers et retourne les URLs avec leurs thumbnails
+    /// Loads wallpapers and returns URLs with their thumbnails
     func loadIfNeeded(completion: @escaping ([(url: URL, image: NSImage)]) -> Void) {
         if isLoaded {
             completion(getCachedWallpapers())
@@ -55,7 +55,7 @@ final class WallpaperCache {
         }
     }
     
-    /// Récupère les wallpapers cachés
+    /// Retrieves cached wallpapers
     func getCachedWallpapers() -> [(url: URL, image: NSImage)] {
         wallpaperURLs.compactMap { url in
             guard let image = thumbnailCache.object(forKey: url as NSURL) else { return nil }
@@ -63,16 +63,16 @@ final class WallpaperCache {
         }
     }
     
-    /// Ajoute un wallpaper custom au cache
+    /// Adds a custom wallpaper to the cache
     func addCustomWallpaper(url: URL, image: NSImage) {
         guard !wallpaperURLs.contains(url) else { return }
         
         wallpaperURLs.insert(url, at: 0)
-        let cost = Int(image.size.width * image.size.height * 4) // Estimation en bytes
+        let cost = Int(image.size.width * image.size.height * 4) // Estimated bytes
         thumbnailCache.setObject(image, forKey: url as NSURL, cost: cost)
     }
     
-    /// Invalide le cache et force un rechargement
+    /// Invalidates the cache and forces a reload
     func invalidate() {
         thumbnailCache.removeAllObjects()
         wallpaperURLs.removeAll()
@@ -81,7 +81,7 @@ final class WallpaperCache {
         loadCallbacks.removeAll()
     }
     
-    /// Force le rechargement même si déjà chargé
+    /// Forces reload even if already loaded
     func forceReload(completion: @escaping ([(url: URL, image: NSImage)]) -> Void) {
         invalidate()
         loadIfNeeded(completion: completion)
@@ -91,7 +91,7 @@ final class WallpaperCache {
     private func loadAllWallpapers() async {
         var loadedURLs = Set<URL>()
         
-        // Charger les wallpapers depuis le bundle (dossier public)
+        // Load wallpapers from bundle (public folder)
         if let resourcePath = Bundle.main.resourcePath {
             let possiblePaths = [
                 (resourcePath as NSString).appendingPathComponent("public"),
@@ -116,9 +116,9 @@ final class WallpaperCache {
         }
     }
     
-    /// Charge et met en cache une image (haute qualité pour les previews)
+    /// Loads and caches an image (high quality for previews)
     private func loadAndCache(url: URL, loadedURLs: inout Set<URL>) async {
-        // Charger en haute résolution pour une bonne qualité d'affichage
+        // Load in high resolution for good display quality
         if let image = await ImageLoadingService.shared.loadImage(from: url, maxDimension: 1200) {
             await MainActor.run {
                 self.wallpaperURLs.append(url)
@@ -131,13 +131,13 @@ final class WallpaperCache {
 }
 
 // MARK: - ScreenshotEditorViewModel
-/// ViewModel optimisé avec debouncing et cache d'image partagée
+/// Optimized ViewModel with debouncing and shared image cache
 @MainActor
 class ScreenshotEditorViewModel: ObservableObject {
     // MARK: - Published Properties
     @Published var config: ScreenshotStyleConfig = .default {
         didSet {
-            // Invalider le cache de rendu quand la config change
+            // Invalidate render cache when config changes
             if config.renderHash != oldValue.renderHash {
                 invalidateRenderCache()
             }
@@ -176,7 +176,7 @@ class ScreenshotEditorViewModel: ObservableObject {
         
         var defaultConfig = ScreenshotStyleConfig.default
         
-        // Charger l'image par défaut depuis le bundle uniquement
+        // Load default image from bundle only
         if let url = Bundle.main.url(forResource: "Black and White Gradient Macbook Wallpaper_Texture", withExtension: "png", subdirectory: "public") ??
            Bundle.main.url(forResource: "Black and White Gradient Macbook Wallpaper_Texture", withExtension: "png"),
            let image = NSImage(contentsOf: url) {
@@ -219,16 +219,16 @@ class ScreenshotEditorViewModel: ObservableObject {
         cachedRenderedImage = nil
     }
     
-    /// Retourne l'image rendue, utilisant le cache si disponible
+    /// Returns the rendered image, using cache if available
     private func getRenderedImage() -> NSImage? {
         let currentHash = config.renderHash
         
-        // Utiliser le cache si valide
+        // Use cache if valid
         if cachedRenderHash == currentHash, let cached = cachedRenderedImage {
             return cached
         }
         
-        // Rendre et cacher
+        // Render and cache
         let renderer = ScreenshotRenderer(image: originalImage, config: config)
         let rendered = renderer.render()
         
@@ -240,7 +240,7 @@ class ScreenshotEditorViewModel: ObservableObject {
     
     // MARK: - Calculate Fit Zoom
     func calculateFitZoom() {
-        // Ne pas utiliser asyncAfter - calculer directement si canvasSize est disponible
+        // Don't use asyncAfter - calculate directly if canvasSize is available
         guard canvasSize.width > 0, canvasSize.height > 0 else { return }
         
         let leftSidebarWidth: CGFloat = 320 + 24
@@ -308,6 +308,21 @@ class ScreenshotEditorViewModel: ObservableObject {
         return getRenderedImage()
     }
     
+    // MARK: - Copy as PNG to pasteboard
+    func copyAsPNG() {
+        guard let img = getRenderedImage() else {
+            print("copyAsPNG: Failed to get rendered image")
+            return
+        }
+        
+        // Copy as NSImage (macOS handles format automatically)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.writeObjects([img])
+        
+        // Show feedback via ToastManager singleton
+        ToastManager().show(message: "Copied", icon: "doc.on.clipboard.fill", success: true)
+    }
+    
     // MARK: - Save Action
     func saveAction() {
         guard let img = getRenderedImage() else { return }
@@ -323,7 +338,7 @@ class ScreenshotEditorViewModel: ObservableObject {
     }
     
     // MARK: - Share Action
-    func shareAction() {
+    func shareAction(from view: NSView) {
         guard let img = getRenderedImage() else { return }
         
         let tempURL = FileManager.default.temporaryDirectory
@@ -337,11 +352,7 @@ class ScreenshotEditorViewModel: ObservableObject {
             try pngData.write(to: tempURL)
             
             let picker = NSSharingServicePicker(items: [tempURL])
-            
-            if let window = NSApp.keyWindow, let contentView = window.contentView {
-                let rect = NSRect(x: contentView.bounds.maxX - 100, y: contentView.bounds.maxY - 50, width: 1, height: 1)
-                picker.show(relativeTo: rect, of: contentView, preferredEdge: .minY)
-            }
+            picker.show(relativeTo: view.bounds, of: view, preferredEdge: .minY)
         } catch {
             print("Error saving temp file for sharing: \(error)")
         }

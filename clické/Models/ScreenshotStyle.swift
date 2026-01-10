@@ -83,7 +83,7 @@ struct MagicPreset: Identifiable, Equatable {
         self.qisPremium = qisPremium
     }
     
-    // Cached presets - créés une seule fois
+    // Cached presets - created once
     private static let _presets: [MagicPreset] = [
         MagicPreset(colors: [Color(hex: "ffffff")], qisPremium: false),
         MagicPreset(colors: [Color(hex: "1a1a1a")], qisPremium: false),
@@ -498,7 +498,7 @@ struct ScreenshotStyleConfig: Equatable {
     static let `default` = ScreenshotStyleConfig()
     
     // MARK: - Transform Hash (for consolidated animations)
-    /// Hash des propriétés de transformation pour une seule animation consolidée
+    /// Hash of transform properties for a single consolidated animation
     var transformHash: Int {
         var hasher = Hasher()
         hasher.combine(rotation)
@@ -511,7 +511,7 @@ struct ScreenshotStyleConfig: Equatable {
     }
     
     // MARK: - Render Hash (for cache invalidation)
-    /// Hash des propriétés qui affectent le rendu final (pour invalidation du cache)
+    /// Hash of properties that affect final render (for cache invalidation)
     var renderHash: Int {
         var hasher = Hasher()
         hasher.combine(mockupStyle)

@@ -15,9 +15,6 @@ struct ScreenshotEditorView: View {
     @State private var colorPanelObserver: NSObjectProtocol?
     @State private var colorPanelCloseObserver: NSObjectProtocol?
     
-    // Cached shareable image state
-    @State private var cachedShareableImage: Image?
-    @State private var lastRenderHash: Int = 0
     
     init(originalImage: NSImage, onCopy: @escaping (NSImage) -> Void, onClose: @escaping () -> Void) {
         self.originalImage = originalImage
@@ -60,13 +57,6 @@ struct ScreenshotEditorView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: ScreenshotEditorWindow.zoomActualNotification)) { _ in
             viewModel.config.zoom = 100
-        }
-        .onChange(of: viewModel.config.renderHash) { _, newHash in
-            // Invalider le cache de l'image partageable quand la config change
-            if lastRenderHash != newHash {
-                cachedShareableImage = nil
-                lastRenderHash = newHash
-            }
         }
     }
     
@@ -121,30 +111,24 @@ struct ScreenshotEditorView: View {
         }
         
         ToolbarItem(placement: .automatic) {
-            // Use cached shareable image
-            ShareLink(item: shareableImage, preview: SharePreview("Screenshot", image: shareableImage)) {
-                Label("Share", systemImage: "square.and.arrow.up")
+            Button {
+                viewModel.copyAsPNG()
+            } label: {
+                Label("Copy", systemImage: "doc.on.doc")
                     .labelStyle(.iconOnly)
             }
+            .help("Copy as PNG")
         }
         
         ToolbarItem(placement: .automatic) {
-            Button("Copy", systemImage: "doc.on.doc") {
-                if let img = viewModel.copyAction() { onCopy(img) }
+            Button {
+                viewModel.saveAction()
+            } label: {
+                Label("Save", systemImage: "square.and.arrow.down")
+                    .labelStyle(.iconOnly)
             }
+            .help("Save Image")
         }
-    }
-    
-    // Cached shareable image
-    private var shareableImage: Image {
-        if let cached = cachedShareableImage {
-            return cached
-        }
-        let image = viewModel.getShareableImage()
-        DispatchQueue.main.async {
-            cachedShareableImage = image
-        }
-        return image
     }
     
     // MARK: - Inspector Content
@@ -474,7 +458,7 @@ struct ScreenshotEditorView: View {
         colorPanel.color = currentNSColor
         colorPanel.isContinuous = true
         
-        // Capturer une référence locale pour éviter les problèmes de concurrence Swift 6
+        // Capture local reference to avoid Swift 6 concurrency issues
         let vm = viewModel
         
         colorPanelObserver = NotificationCenter.default.addObserver(
@@ -494,7 +478,7 @@ struct ScreenshotEditorView: View {
             }
         }
         
-        // Note: Le cleanup des observers se fait via onDisappear
+        // Note: Observer cleanup is handled via onDisappear
         
         colorPanel.orderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -680,7 +664,7 @@ struct ScreenshotEditorView: View {
                 ) { newOffset in
                     viewModel.config.screenshotOffset = newOffset
                 }
-                // Pas de .id() ici - évite de recréer la vue et le flash blanc
+                // No .id() here - avoids recreating the view and white flash
                 .scaleEffect(viewModel.config.zoom / 100)
                 .animation(.easeOut(duration: 0.15), value: viewModel.config.zoom)
                 .position(
@@ -693,13 +677,13 @@ struct ScreenshotEditorView: View {
             .simultaneousGesture(magnifyGesture)
             .onAppear {
                 viewModel.canvasSize = geo.size
-                // Différer le calcul pour éviter le cycle de layout
+                // Defer calculation to avoid layout cycle
                 DispatchQueue.main.async {
                     viewModel.calculateFitZoom()
                 }
             }
             .onChange(of: geo.size) { _, new in
-                // Éviter les appels répétés si la taille n'a pas vraiment changé
+                // Avoid repeated calls if size hasn't really changed
                 guard abs(viewModel.canvasSize.width - new.width) > 1 ||
                       abs(viewModel.canvasSize.height - new.height) > 1 else { return }
                 
@@ -707,7 +691,7 @@ struct ScreenshotEditorView: View {
                 let oldLastOffset = viewModel.lastOffset
                 viewModel.canvasSize = new
                 
-                // Différer pour éviter le cycle de layout récursif
+                // Defer to avoid recursive layout cycle
                 DispatchQueue.main.async {
                     viewModel.calculateFitZoom()
                     viewModel.offset = oldOffset
@@ -868,9 +852,9 @@ struct ScreenshotEditorView: View {
 }
 
 // MARK: - Optimized Generic Slider
-/// Slider générique optimisé supportant Double et CGFloat
-/// Utilise une valeur locale pendant le glissement pour éviter les re-rendus coûteux,
-/// puis synchronise avec le binding uniquement au relâchement.
+/// Optimized generic slider supporting Double and CGFloat.
+/// Uses a local value during dragging to avoid expensive re-renders,
+/// then syncs with the binding only on release.
 struct OptimizedSlider<T: BinaryFloatingPoint>: View where T.Stride: BinaryFloatingPoint {
     @Binding var value: T
     let range: ClosedRange<T>
@@ -880,7 +864,7 @@ struct OptimizedSlider<T: BinaryFloatingPoint>: View where T.Stride: BinaryFloat
     var unit: String = ""
     var decimals: Int = 0
     
-    // État local pour le glissement fluide
+    // Local state for smooth dragging
     @State private var localValue: T
     @State private var isDragging: Bool = false
     
@@ -900,7 +884,7 @@ struct OptimizedSlider<T: BinaryFloatingPoint>: View where T.Stride: BinaryFloat
         self.showValue = showValue
         self.unit = unit
         self.decimals = decimals
-        // Initialiser la valeur locale avec la valeur du binding
+        // Initialize local value with binding value
         self._localValue = State(initialValue: value.wrappedValue)
     }
     
@@ -927,7 +911,7 @@ struct OptimizedSlider<T: BinaryFloatingPoint>: View where T.Stride: BinaryFloat
             .frame(width: 100)
             
             if showValue {
-                // Afficher la valeur locale pour un feedback immédiat
+                // Display local value for immediate feedback
                 Text(formatValue(localValue) + unit)
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(.tertiary)
@@ -937,18 +921,18 @@ struct OptimizedSlider<T: BinaryFloatingPoint>: View where T.Stride: BinaryFloat
             }
         }
         .onChange(of: value) { _, newValue in
-            // Synchroniser la valeur externe vers locale seulement si on ne glisse pas
+            // Sync external value to local only when not dragging
             if !isDragging {
                 localValue = newValue
             }
         }
     }
     
-    /// Gère le changement d'état du glissement
+    /// Handles dragging state changes
     private func handleEditingChanged(_ editing: Bool) {
         isDragging = editing
         if !editing {
-            // Synchroniser vers le binding au relâchement
+            // Sync to binding on release
             value = localValue
         }
     }
@@ -961,6 +945,43 @@ struct OptimizedSlider<T: BinaryFloatingPoint>: View where T.Stride: BinaryFloat
             return "\(Int(doubleVal))"
         } else {
             return String(format: "%.0f", doubleVal)
+        }
+    }
+}
+
+// MARK: - Share Button with NSView reference for proper popup positioning
+struct ShareButton: NSViewRepresentable {
+    let viewModel: ScreenshotEditorViewModel
+    
+    func makeNSView(context: Context) -> NSButton {
+        let button = NSButton()
+        button.bezelStyle = .toolbar
+        button.image = NSImage(systemSymbolName: "square.and.arrow.up", accessibilityDescription: "Share")
+        button.imagePosition = .imageOnly
+        button.isBordered = false
+        button.target = context.coordinator
+        button.action = #selector(Coordinator.shareClicked(_:))
+        button.toolTip = "Share"
+        return button
+    }
+    
+    func updateNSView(_ nsView: NSButton, context: Context) {
+        context.coordinator.viewModel = viewModel
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(viewModel: viewModel)
+    }
+    
+    class Coordinator: NSObject {
+        var viewModel: ScreenshotEditorViewModel
+        
+        init(viewModel: ScreenshotEditorViewModel) {
+            self.viewModel = viewModel
+        }
+        
+        @objc func shareClicked(_ sender: NSButton) {
+            viewModel.shareAction(from: sender)
         }
     }
 }

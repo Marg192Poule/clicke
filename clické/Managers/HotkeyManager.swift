@@ -1,8 +1,8 @@
 import AppKit
 import ApplicationServices
 
-/// Gestionnaire pour enregistrer et détecter les raccourcis clavier globaux
-/// Supporte plusieurs hotkeys (screenshot et tabCapture)
+/// Manager for registering and detecting global keyboard shortcuts.
+/// Supports multiple hotkeys (screenshot and tabCapture).
 class HotkeyManager {
     // MARK: - Hotkey Handlers
     private struct HotkeyHandler {
@@ -17,7 +17,7 @@ class HotkeyManager {
     
     // MARK: - Initialization
     init() {
-        // Les handlers seront configurés via les méthodes setHotkeyHandler
+        // Handlers will be configured via setHotkeyHandler methods
     }
     
     // MARK: - Screenshot Hotkey
@@ -43,26 +43,26 @@ class HotkeyManager {
     }
     
     // MARK: - Register All Hotkeys
-    /// Enregistre tous les hotkeys configurés
+    /// Registers all configured hotkeys
     func registerAllHotkeys() {
         unregisterAllHotkeys()
         
-        // Enregistrer screenshot hotkey
+        // Register screenshot hotkey
         if var handler = screenshotHandler {
             handler.configuration = Settings.current.hotkey
             
-            // Monitor global pour capturer les événements même quand l'app n'est pas active
+            // Global monitor to capture events even when app is not active
             handler.globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
                 if handler.configuration.matches(event: event) {
                     handler.onPressed?()
                 }
             }
             
-            // Monitor local pour capturer les événements quand l'app est active
+            // Local monitor to capture events when app is active
             handler.localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
                 if handler.configuration.matches(event: event) {
                     handler.onPressed?()
-                    return nil  // Consommer l'événement pour éviter le comportement système
+                    return nil  // Consume event to prevent system behavior
                 }
                 return event
             }
@@ -70,22 +70,22 @@ class HotkeyManager {
             screenshotHandler = handler
         }
         
-        // Enregistrer tab capture hotkey
+        // Register tab capture hotkey
         if var handler = tabCaptureHandler {
             handler.configuration = Settings.current.tabCaptureHotkey
             
-            // Monitor global pour capturer les événements même quand l'app n'est pas active
+            // Global monitor to capture events even when app is not active
             handler.globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
                 if handler.configuration.matches(event: event) {
                     handler.onPressed?()
                 }
             }
             
-            // Monitor local pour capturer les événements quand l'app est active
+            // Local monitor to capture events when app is active
             handler.localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
                 if handler.configuration.matches(event: event) {
                     handler.onPressed?()
-                    return nil  // Consommer l'événement pour éviter le comportement système
+                    return nil  // Consume event to prevent system behavior
                 }
                 return event
             }
@@ -95,9 +95,9 @@ class HotkeyManager {
     }
     
     // MARK: - Unregister All Hotkeys
-    /// Désenregistre tous les hotkeys
+    /// Unregisters all hotkeys
     func unregisterAllHotkeys() {
-        // Désenregistrer screenshot hotkey
+        // Unregister screenshot hotkey
         if let globalMonitor = screenshotHandler?.globalMonitor {
             NSEvent.removeMonitor(globalMonitor)
         }
@@ -107,7 +107,7 @@ class HotkeyManager {
         screenshotHandler?.globalMonitor = nil
         screenshotHandler?.localMonitor = nil
         
-        // Désenregistrer tab capture hotkey
+        // Unregister tab capture hotkey
         if let globalMonitor = tabCaptureHandler?.globalMonitor {
             NSEvent.removeMonitor(globalMonitor)
         }
@@ -119,7 +119,7 @@ class HotkeyManager {
     }
     
     // MARK: - Update Configurations
-    /// Met à jour la configuration du screenshot hotkey et réenregistre
+    /// Updates screenshot hotkey configuration and re-registers
     func updateScreenshotHotkeyConfiguration(_ config: HotkeyConfiguration) {
         var settings = Settings.current
         settings.hotkey = config
@@ -127,7 +127,7 @@ class HotkeyManager {
         registerAllHotkeys()
     }
     
-    /// Met à jour la configuration du tab capture hotkey et réenregistre
+    /// Updates tab capture hotkey configuration and re-registers
     func updateTabCaptureHotkeyConfiguration(_ config: HotkeyConfiguration) {
         var settings = Settings.current
         settings.tabCaptureHotkey = config
@@ -157,7 +157,7 @@ class HotkeyManager {
     }
     
     // MARK: - Permissions
-    /// Vérifie les permissions d'accessibilité (sans déclencher de popup)
+    /// Checks accessibility permissions (without triggering popup)
     static func checkAccessibilityPermissions() -> Bool {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: false]
         return AXIsProcessTrustedWithOptions(options as CFDictionary)

@@ -5,15 +5,15 @@ import CoreImage
 // Note: Uses NSImage+Extensions for resizedProportionally
 
 // MARK: - ImageLoadingService
-/// Service centralisé pour le chargement et le traitement d'images
-/// Remplace toutes les duplications de code dans le projet
+/// Centralized service for image loading and processing.
+/// Replaces all code duplications in the project.
 actor ImageLoadingService {
     
     // MARK: - Singleton
     static let shared = ImageLoadingService()
     
     // MARK: - Shared Resources (GPU-accelerated)
-    /// CIContext partagé pour éviter les recréations coûteuses
+    /// Shared CIContext to avoid expensive re-creations
     private let ciContext: CIContext = {
         CIContext(options: [
             .useSoftwareRenderer: false,
@@ -24,16 +24,16 @@ actor ImageLoadingService {
     
     // MARK: - Image Loading
     
-    /// Charge une image depuis une URL (supporte HEIC, images standard et vidéos)
+    /// Loads an image from a URL (supports HEIC, standard images and videos)
     /// - Parameters:
-    ///   - url: URL du fichier
-    ///   - maxDimension: Dimension maximale pour le redimensionnement (nil = taille originale, max 4096 recommandé)
-    /// - Returns: L'image chargée ou nil
+    ///   - url: File URL
+    ///   - maxDimension: Maximum dimension for resizing (nil = original size, max 4096 recommended)
+    /// - Returns: The loaded image or nil
     func loadImage(from url: URL, maxDimension: CGFloat? = nil) async -> NSImage? {
         let videoExtensions = ["mov", "mp4", "m4v"]
         let isVideo = videoExtensions.contains(url.pathExtension.lowercased())
         
-        // Pour les vidéos, extraire une frame
+        // For videos, extract a frame
         if isVideo {
             let image = await extractFrameFromVideo(url: url)
             if let maxDim = maxDimension, let img = image {
@@ -42,27 +42,27 @@ actor ImageLoadingService {
             return image
         }
         
-        // Pour les images avec une taille max, utiliser le chargement optimisé
-        // Cela évite de charger l'image complète en mémoire (évite les erreurs IOSurface)
-        // CGImageSource supporte HEIC sur macOS, donc on peut utiliser la même approche
+        // For images with max size, use optimized loading
+        // This avoids loading the full image into memory (prevents IOSurface errors)
+        // CGImageSource supports HEIC on macOS, so we can use the same approach
         if let maxDim = maxDimension {
             return loadImageWithMaxSize(from: url, maxPixelSize: maxDim)
         }
         
-        // Sans limite de taille, charger normalement
+        // Without size limit, load normally
         return loadImageFromFile(url: url)
     }
     
-    /// Charge une image depuis un fichier avec support HEIC optimisé
+    /// Loads an image from a file with optimized HEIC support
     func loadImageFromFile(url: URL) -> NSImage? {
         let ext = url.pathExtension.lowercased()
         
-        // Pour les fichiers HEIC/HEIF, utiliser CIImage avec le contexte partagé
+        // For HEIC/HEIF files, use CIImage with shared context
         if ext == "heic" || ext == "heif" {
             return loadHEICImage(from: url)
         }
         
-        // Pour les autres formats, utiliser CGImageSource (plus performant)
+        // For other formats, use CGImageSource (more performant)
         return loadStandardImage(from: url)
     }
     
@@ -86,14 +86,14 @@ actor ImageLoadingService {
         return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
     }
     
-    /// Charge une image avec une taille maximale (évite les erreurs IOSurface)
+    /// Loads an image with maximum size (avoids IOSurface errors)
     private func loadImageWithMaxSize(from url: URL, maxPixelSize: CGFloat) -> NSImage? {
         guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil) else {
             return NSImage(contentsOf: url)
         }
         
-        // Utiliser CGImageSource pour créer directement un thumbnail à la bonne taille
-        // Cela évite de charger l'image complète en mémoire
+        // Use CGImageSource to directly create thumbnail at the right size
+        // This avoids loading the full image into memory
         let options: [CFString: Any] = [
             kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
             kCGImageSourceCreateThumbnailFromImageAlways: true,
@@ -102,7 +102,7 @@ actor ImageLoadingService {
         ]
         
         guard let cgImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary) else {
-            // Fallback: charger normalement
+            // Fallback: load normally
             return loadStandardImage(from: url)
         }
         
@@ -111,7 +111,7 @@ actor ImageLoadingService {
     
     // MARK: - Video Frame Extraction
     
-    /// Extrait une frame d'une vidéo de manière asynchrone (sans bloquer)
+    /// Extracts a frame from a video asynchronously (non-blocking)
     func extractFrameFromVideo(url: URL) async -> NSImage? {
         let asset = AVURLAsset(url: url)
         let generator = AVAssetImageGenerator(asset: asset)
@@ -120,12 +120,12 @@ actor ImageLoadingService {
         generator.requestedTimeToleranceBefore = .zero
         generator.maximumSize = CGSize(width: 3840, height: 2160) // 4K max
         
-        // Essayer d'abord à 1 seconde
+        // Try first at 1 second
         if let image = await extractFrame(generator: generator, at: CMTime(seconds: 1, preferredTimescale: 600)) {
             return image
         }
         
-        // Fallback à 0 seconde
+        // Fallback to 0 seconds
         return await extractFrame(generator: generator, at: .zero)
     }
     
@@ -144,9 +144,9 @@ actor ImageLoadingService {
     
     // MARK: - Image Resizing (GPU-accelerated)
     
-    /// Redimensionne une image en conservant les proportions
+    /// Resizes an image while preserving proportions
     func resizeImage(_ image: NSImage, maxDimension: CGFloat) -> NSImage? {
-        // Ne pas redimensionner si déjà assez petit
+        // Don't resize if already small enough
         guard image.size.width > maxDimension || image.size.height > maxDimension else {
             return image
         }
@@ -160,7 +160,7 @@ actor ImageLoadingService {
             newSize = NSSize(width: maxDimension * aspectRatio, height: maxDimension)
         }
         
-        // Utiliser CGContext pour le redimensionnement GPU-acceleré
+        // Use CGContext for GPU-accelerated resizing
         guard let tiffData = image.tiffRepresentation,
               let bitmapRep = NSBitmapImageRep(data: tiffData),
               let cgImage = bitmapRep.cgImage else {
@@ -189,7 +189,7 @@ actor ImageLoadingService {
         return NSImage(cgImage: resizedCGImage, size: newSize)
     }
     
-    /// Fallback pour le redimensionnement si GPU non disponible
+    /// Fallback for resizing if GPU unavailable
     private func resizeImageFallback(_ image: NSImage, to newSize: NSSize) -> NSImage {
         let newImage = NSImage(size: newSize)
         newImage.lockFocus()
@@ -205,11 +205,11 @@ actor ImageLoadingService {
 }
 
 // MARK: - Synchronous Wrapper for Compatibility
-/// Wrapper pour permettre l'appel synchrone depuis les contextes non-async
+/// Wrapper to allow synchronous calls from non-async contexts
 extension ImageLoadingService {
     
-    /// Charge une image de manière synchrone (pour la compatibilité avec le code existant)
-    /// ⚠️ Préférer la version async quand possible
+    /// Loads an image synchronously (for compatibility with existing code)
+    /// ⚠️ Prefer async version when possible
     nonisolated func loadImageSync(from url: URL, maxDimension: CGFloat? = nil) -> NSImage? {
         let semaphore = DispatchSemaphore(value: 0)
         var result: NSImage?
@@ -223,9 +223,9 @@ extension ImageLoadingService {
         return result
     }
     
-    /// Crée une miniature optimisée (nonisolated pour accès synchrone)
+    /// Creates an optimized thumbnail (nonisolated for synchronous access)
     nonisolated func createThumbnail(from image: NSImage, maxSize: NSSize = NSSize(width: 400, height: 300)) -> NSImage {
-        // Calcul proportionnel du redimensionnement
+        // Proportional resize calculation
         let aspectRatio = image.size.width / image.size.height
         var newSize: NSSize
         
@@ -235,7 +235,7 @@ extension ImageLoadingService {
             newSize = NSSize(width: maxSize.height * aspectRatio, height: maxSize.height)
         }
         
-        // S'assurer de ne pas dépasser les limites
+        // Ensure we don't exceed limits
         if newSize.width > maxSize.width {
             newSize.width = maxSize.width
             newSize.height = maxSize.width / aspectRatio

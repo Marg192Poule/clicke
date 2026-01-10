@@ -16,14 +16,14 @@ enum CaptureSound: String, Codable, CaseIterable, Identifiable {
     
     var systemSoundName: String {
         switch self {
-        case .hero: return "Hero"           // Son moderne et satisfaisant
-        case .submarine: return "Submarine" // Son distinctif
-        case .blow: return "Blow"           // Son rapide et léger
-        case .frog: return "Frog"           // Son amusant
-        case .funk: return "Funk"           // Son rythmé
-        case .sosumi: return "Sosumi"       // Son classique macOS
-        case .basso: return "Basso"         // Son profond
-        case .pop: return "Pop"             // Son court et sec
+        case .hero: return "Hero"           // Modern and satisfying sound
+        case .submarine: return "Submarine" // Distinctive sound
+        case .blow: return "Blow"           // Quick and light sound
+        case .frog: return "Frog"           // Fun sound
+        case .funk: return "Funk"           // Rhythmic sound
+        case .sosumi: return "Sosumi"       // Classic macOS sound
+        case .basso: return "Basso"         // Deep sound
+        case .pop: return "Pop"             // Short and snappy sound
         }
     }
 }
@@ -42,7 +42,7 @@ struct Settings: Codable, Equatable {
     static let `default` = Settings(
         hotkey: .default,
         tabCaptureHotkey: HotkeyConfiguration(keyCode: 17, modifiers: [.option, .shift]), // Option+Shift+T
-        showDockIcon: true,  // Temporairement true pour tester l'icône
+        showDockIcon: true,  // Temporarily true for testing icon
         copyToClipboard: true,
         soundEffectsEnabled: true,
         soundEffectsVolume: 0.5,
