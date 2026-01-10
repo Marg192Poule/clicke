@@ -111,10 +111,12 @@ struct PixelateShaderView: View {
 /// This is independent of the background content, so blur won't affect it
 struct NoiseTextureView: View {
     var intensity: Double // 0 to 1
+    var size: CGSize
     
     var body: some View {
         Rectangle()
             .fill(Color.gray) // Base color for the noise shader to work on
+            .frame(width: size.width, height: size.height)
             .colorEffect(
                 ShaderLibrary.noiseTexture(
                     .float(intensity)
@@ -122,6 +124,5 @@ struct NoiseTextureView: View {
             )
             .blendMode(.softLight) // softLight preserves luminosity better than overlay
             .allowsHitTesting(false)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

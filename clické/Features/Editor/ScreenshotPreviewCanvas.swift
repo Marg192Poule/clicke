@@ -19,20 +19,24 @@ struct ScreenshotPreviewCanvas: View {
             // Background with unified blur (except transparent)
             if config.backgroundType == .transparent {
                 backgroundView
+                    .frame(width: totalWidth, height: totalHeight)
             } else {
                 // Only apply drawingGroup if blur > 0 (otherwise degraded quality)
                 if config.gradientConfig.blurAmount > 0 {
                     backgroundView
+                        .frame(width: totalWidth, height: totalHeight)
+                        .clipped()
                         .blur(radius: config.gradientConfig.blurAmount)
                         .drawingGroup(opaque: true, colorMode: .linear)
                 } else {
                     backgroundView
+                        .frame(width: totalWidth, height: totalHeight)
+                        .clipped()
                 }
                 
                 // Noise overlay (skip during export - Metal shaders don't work with ImageRenderer)
                 if config.gradientConfig.noiseAmount > 0 && !isRendering {
-                    NoiseTextureView(intensity: config.gradientConfig.noiseAmount / 100)
-                        .frame(width: totalWidth, height: totalHeight)
+                    NoiseTextureView(intensity: config.gradientConfig.noiseAmount / 100, size: CGSize(width: totalWidth, height: totalHeight))
                 }
             }
             
@@ -271,12 +275,14 @@ struct ScreenshotPreviewCanvas: View {
                         .antialiased(true)
                         .resizable()
                         .scaledToFill()
+                        .frame(width: totalWidth, height: totalHeight)
                 } else if let cachedImage = loadedBackgroundImage {
                     Image(nsImage: cachedImage)
                         .interpolation(.high)
                         .antialiased(true)
                         .resizable()
                         .scaledToFill()
+                        .frame(width: totalWidth, height: totalHeight)
                 } else {
                     colorBackground
                 }

@@ -376,6 +376,7 @@ struct ScreenshotEditorView: View {
                     )
                 }
             }
+            
         }
     }
     
