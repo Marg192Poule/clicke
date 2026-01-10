@@ -247,10 +247,19 @@ class ScreenshotEditorViewModel: ObservableObject {
         let availableWidth = max(canvasSize.width - leftSidebarWidth - 40, 200)
         let availableHeight = max(canvasSize.height - 60, 200)
         
-        let totalWidth = originalImage.size.width + config.padding * 2
-        let totalHeight = originalImage.size.height + config.padding * 2
+        // Use social preset dimensions if selected, otherwise use image dimensions
+        let totalWidth: CGFloat
+        let totalHeight: CGFloat
+        if let preset = config.selectedSocialPreset {
+            totalWidth = CGFloat(preset.width)
+            totalHeight = CGFloat(preset.height)
+        } else {
+            totalWidth = originalImage.size.width + config.padding * 2
+            totalHeight = originalImage.size.height + config.padding * 2
+        }
         
-        let fitScale = min(availableWidth / totalWidth, availableHeight / totalHeight, 1.0)
+        // Allow zoom > 100% if canvas is smaller than available space (max 150%)
+        let fitScale = min(availableWidth / totalWidth, availableHeight / totalHeight, 1.5)
         
         withAnimation(.easeOut(duration: 0.25)) {
             config.zoom = fitScale * 100
@@ -337,34 +346,6 @@ class ScreenshotEditorViewModel: ObservableObject {
         }
     }
     
-    // MARK: - Share Action
-    func shareAction(from view: NSView) {
-        guard let img = getRenderedImage() else { return }
-        
-        let tempURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("screenshot_\(Int(Date().timeIntervalSince1970)).png")
-        
-        guard let tiffData = img.tiffRepresentation,
-              let bitmapImage = NSBitmapImageRep(data: tiffData),
-              let pngData = bitmapImage.representation(using: .png, properties: [:]) else { return }
-        
-        do {
-            try pngData.write(to: tempURL)
-            
-            let picker = NSSharingServicePicker(items: [tempURL])
-            picker.show(relativeTo: view.bounds, of: view, preferredEdge: .minY)
-        } catch {
-            print("Error saving temp file for sharing: \(error)")
-        }
-    }
-    
-    // MARK: - Get Shareable Image (cached)
-    func getShareableImage() -> Image {
-        if let img = getRenderedImage() {
-            return Image(nsImage: img)
-        }
-        return Image(nsImage: originalImage)
-    }
     
     // MARK: - Text Overlay Actions
     func addTextOverlay() {

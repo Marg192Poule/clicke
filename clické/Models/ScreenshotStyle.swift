@@ -485,8 +485,8 @@ struct ScreenshotStyleConfig: Equatable {
     var redactStyle: RedactStyle = .blur
     var redactRegions: [RedactRegion] = []
     
-    // Social Media Export
-    var selectedSocialPreset: SocialMediaPreset? = nil
+    // Social Media Export (default: Tweet format)
+    var selectedSocialPreset: SocialMediaPreset? = SocialMediaPreset.presets.first
     
     // Canvas
     var padding: CGFloat = 80

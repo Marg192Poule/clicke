@@ -949,39 +949,3 @@ struct OptimizedSlider<T: BinaryFloatingPoint>: View where T.Stride: BinaryFloat
     }
 }
 
-// MARK: - Share Button with NSView reference for proper popup positioning
-struct ShareButton: NSViewRepresentable {
-    let viewModel: ScreenshotEditorViewModel
-    
-    func makeNSView(context: Context) -> NSButton {
-        let button = NSButton()
-        button.bezelStyle = .toolbar
-        button.image = NSImage(systemSymbolName: "square.and.arrow.up", accessibilityDescription: "Share")
-        button.imagePosition = .imageOnly
-        button.isBordered = false
-        button.target = context.coordinator
-        button.action = #selector(Coordinator.shareClicked(_:))
-        button.toolTip = "Share"
-        return button
-    }
-    
-    func updateNSView(_ nsView: NSButton, context: Context) {
-        context.coordinator.viewModel = viewModel
-    }
-    
-    func makeCoordinator() -> Coordinator {
-        Coordinator(viewModel: viewModel)
-    }
-    
-    class Coordinator: NSObject {
-        var viewModel: ScreenshotEditorViewModel
-        
-        init(viewModel: ScreenshotEditorViewModel) {
-            self.viewModel = viewModel
-        }
-        
-        @objc func shareClicked(_ sender: NSButton) {
-            viewModel.shareAction(from: sender)
-        }
-    }
-}

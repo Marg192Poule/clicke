@@ -122,5 +122,6 @@ struct NoiseTextureView: View {
             )
             .blendMode(.softLight) // softLight preserves luminosity better than overlay
             .allowsHitTesting(false)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

@@ -32,6 +32,7 @@ struct ScreenshotPreviewCanvas: View {
                 // Noise overlay (skip during export - Metal shaders don't work with ImageRenderer)
                 if config.gradientConfig.noiseAmount > 0 && !isRendering {
                     NoiseTextureView(intensity: config.gradientConfig.noiseAmount / 100)
+                        .frame(width: totalWidth, height: totalHeight)
                 }
             }
             
@@ -188,13 +189,15 @@ struct ScreenshotPreviewCanvas: View {
         let imageWidth = image.size.width + config.padding * 2
         let imageHeight = image.size.height + config.padding * 2
         
-        let availableWidth = presetWidth - 40
-        let availableHeight = presetHeight - 40
+        // Use 80% of preset size as available area for better default fit
+        let availableWidth = presetWidth * 0.8
+        let availableHeight = presetHeight * 0.8
         
         let scaleX = availableWidth / imageWidth
         let scaleY = availableHeight / imageHeight
         
-        return min(scaleX, scaleY, 1.0) * (config.imageScale / 100)
+        // Allow scaling up (no 1.0 limit) so smaller images fill the format better
+        return min(scaleX, scaleY) * (config.imageScale / 100)
     }
     
     // MARK: - Screenshot Content
