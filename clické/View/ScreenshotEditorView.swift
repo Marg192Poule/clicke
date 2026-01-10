@@ -111,7 +111,7 @@ struct ScreenshotEditorView: View {
         
         ToolbarItem(placement: .automatic) {
             Button(action: viewModel.resetPosition) {
-                Image(systemName: "arrow.counterclockwise")
+                Image(systemName: "arrow.down.right.and.arrow.up.left.rectangle")
             }
             .help("Reset Disposition")
         }
@@ -300,7 +300,7 @@ struct ScreenshotEditorView: View {
             }
             
             if viewModel.config.mockupStyle != .glassEffect {
-                LabeledContent("rotation.x") {
+                LabeledContent("rotationX") {
                     HStack(spacing: 4) {
                         OptimizedSlider(
                             value: $viewModel.config.rotationX,
@@ -317,7 +317,7 @@ struct ScreenshotEditorView: View {
                     }
                 }
                 
-                LabeledContent("rotation.y") {
+                LabeledContent("rotationY") {
                     HStack(spacing: 4) {
                         OptimizedSlider(
                             value: $viewModel.config.rotationY,
@@ -641,7 +641,7 @@ struct ScreenshotEditorView: View {
     private var wallpaperPicker: some View {
         VStack(alignment: .leading, spacing: 10) {
             Button(action: viewModel.importCustomImage) {
-                Label("import.image", systemImage: "plus.circle.fill")
+                Label("import image", systemImage: "plus.circle.fill")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)

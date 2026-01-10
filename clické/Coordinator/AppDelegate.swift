@@ -303,14 +303,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 )?.first as? NSImage {
                     // Afficher le toast interactif avec option Edit
                     toastManager.showWithEditOption(
-                        message: String(localized: "window.captured"),
+                        message: String(localized: "window captured"),
                         icon: "macwindow",
                         screenshotImage: image
                     )
                 } else {
                     // Fallback au toast simple
                     toastManager.show(
-                        message: String(localized: "window.captured"),
+                        message: String(localized: "window captured"),
                         icon: "macwindow",
                         success: true
                     )
