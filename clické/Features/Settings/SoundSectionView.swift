@@ -1,6 +1,7 @@
 import SwiftUI
 import AVFoundation
 
+/// Settings section for configuring capture sound effects.
 struct SoundSectionView: View {
     @Binding var soundEnabled: Bool
     @Binding var volume: Double
@@ -20,7 +21,7 @@ struct SoundSectionView: View {
             }
             
             if soundEnabled {
-                // Choix du son
+                // Sound selection
                 Label {
                     HStack {
                         Text("capture sound")
@@ -33,7 +34,7 @@ struct SoundSectionView: View {
                         .pickerStyle(.menu)
                         .frame(width: 120)
                         
-                        // Bouton pour tester le son
+                        // Button to test the sound
                         Button(action: {
                             playSoundPreview()
                         }) {
@@ -47,7 +48,7 @@ struct SoundSectionView: View {
                     Image(systemName: "music.note")
                 }
                 
-                // Contrôle du volume
+                // Volume control
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Image(systemName: "speaker.wave.1.fill")
@@ -78,17 +79,23 @@ struct SoundSectionView: View {
     }
 }
 
-// Manager pour jouer les sons système
+// MARK: - Sound Manager
+
+/// Manager for playing system sounds.
 class SoundManager {
     static let shared = SoundManager()
     
     private var audioPlayer: AVAudioPlayer?
     
+    /// Plays the specified capture sound at the given volume.
+    /// - Parameters:
+    ///   - sound: The capture sound to play.
+    ///   - volume: The volume level (0.0 to 1.0).
     func playSound(_ sound: CaptureSound, volume: Float) {
-        // Utiliser les sons système de macOS
+        // Use macOS system sounds
         let soundName = sound.systemSoundName
         
-        // Chemins possibles pour les sons système
+        // Possible paths for system sounds
         let possiblePaths = [
             "/System/Library/Sounds/\(soundName).aiff",
             "/System/Library/Components/CoreAudio.component/Contents/SharedSupport/SystemSounds/system/\(soundName).aif"
@@ -108,11 +115,10 @@ class SoundManager {
             }
         }
         
-        // Fallback: utiliser NSSound pour les sons système
+        // Fallback: use NSSound for system sounds
         if let sound = NSSound(named: soundName) {
             sound.volume = volume
             sound.play()
         }
     }
 }
-

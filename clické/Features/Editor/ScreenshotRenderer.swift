@@ -4,7 +4,8 @@ import CoreImage
 import CoreImage.CIFilterBuiltins
 
 // MARK: - ScreenshotRenderer
-/// Renderer optimisé pour l'export de screenshots avec noise via CIKernel
+
+/// Optimized renderer for exporting screenshots with noise via CIKernel.
 final class ScreenshotRenderer {
     let image: NSImage
     let config: ScreenshotStyleConfig
@@ -55,7 +56,8 @@ final class ScreenshotRenderer {
         return CIColorKernel(source: kernelCode)
     }()
     
-    // MARK: - Scale dynamique basé sur la taille de sortie
+    // MARK: - Dynamic Scale Based on Output Size
+    
     private var optimalScale: CGFloat {
         let outputWidth = calculateOutputSize().width
         
@@ -230,7 +232,7 @@ final class ScreenshotRenderer {
         let baseWidth = image.size.width + config.padding * 2 + mockupPadding.width
         let baseHeight = image.size.height + config.padding * 2 + mockupPadding.height
         
-        // Si un preset social est sélectionné, utiliser ses dimensions
+        // If a social preset is selected, use its dimensions
         if let preset = config.selectedSocialPreset {
             return CGSize(width: CGFloat(preset.width), height: CGFloat(preset.height))
         }

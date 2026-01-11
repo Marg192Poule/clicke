@@ -90,6 +90,8 @@ clicke/
 │   └── Settings/     Preferences views
 ├── Managers/         Hotkey and toast managers
 ├── Models/           Data models
+├── Services/         Image loading and processing
+├── Shaders/          Metal shaders for GPU effects
 ├── View/             Main views
 └── ViewModel/        View models
 ```

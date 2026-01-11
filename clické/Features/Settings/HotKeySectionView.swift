@@ -1,23 +1,30 @@
 import SwiftUI
 import AppKit
 
-struct HotKeySectionView: View {
+// MARK: - Generic HotKey Recorder Component
+
+/// A reusable component for recording keyboard shortcuts.
+/// Used by both screenshot and window capture hotkey sections.
+struct HotKeyRecorderView: View {
+    let sectionTitle: String
+    let description: String
     @Binding var configuration: HotkeyConfiguration
-    @Binding var isSettingHotKey: Bool
-    @Binding var currentModifiers: NSEvent.ModifierFlags
+    let onConfigurationChanged: (HotkeyConfiguration) -> Void
+    
+    @State private var isRecording = false
+    @State private var currentModifiers: NSEvent.ModifierFlags = []
     @State private var keyMonitor: Any?
     
     var body: some View {
-        Section("Global Shortcut") {
+        Section(sectionTitle) {
             VStack(spacing: 12) {
-                // Hot key view (centered like in Hex)
                 HStack {
                     Spacer()
                     HotKeyView(
-                        configuration: isSettingHotKey ? 
-                            HotkeyConfiguration(keyCode: 0, modifiers: currentModifiers) : 
+                        configuration: isRecording ?
+                            HotkeyConfiguration(keyCode: 0, modifiers: currentModifiers) :
                             configuration,
-                        isActive: isSettingHotKey
+                        isActive: isRecording
                     )
                     .animation(.spring(), value: configuration.keyCode)
                     .animation(.spring(), value: currentModifiers)
@@ -25,46 +32,46 @@ struct HotKeySectionView: View {
                 }
                 .contentShape(Rectangle())
                 .onTapGesture {
-                    startSettingHotKey()
+                    startRecording()
                 }
                 
-                if !isSettingHotKey && configuration.keyCode == 0 && !configuration.modifiers.isEmpty {
+                if !isRecording && configuration.keyCode == 0 && !configuration.modifiers.isEmpty {
                     Text("Modifier-only shortcut")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
                 
-                Text("Click the area above then type the desired key combination")
+                Text(description)
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
             }
         }
     }
     
-    private func startSettingHotKey() {
-        isSettingHotKey = true
+    private func startRecording() {
+        isRecording = true
         currentModifiers = []
         
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [self] event in
             if event.type == .keyDown {
                 if event.keyCode == 53 { // Escape
-                    cancelSetting()
+                    cancelRecording()
                     return nil
                 }
                 
                 if !isModifierKey(event.keyCode) {
                     let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
                     
-                    configuration = HotkeyConfiguration(
+                    let newConfig = HotkeyConfiguration(
                         keyCode: event.keyCode,
                         modifiers: modifiers
                     )
+                    configuration = newConfig
                     
-                    finishSetting()
+                    finishRecording()
                     return nil
                 }
             } else if event.type == .flagsChanged {
-                // Mettre à jour les modificateurs en temps réel
                 currentModifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
             }
             
@@ -72,25 +79,24 @@ struct HotKeySectionView: View {
         }
     }
     
-    private func cancelSetting() {
-        isSettingHotKey = false
+    private func cancelRecording() {
+        isRecording = false
         currentModifiers = []
-        if let monitor = keyMonitor {
-            NSEvent.removeMonitor(monitor)
-            keyMonitor = nil
-        }
+        removeMonitor()
     }
     
-    private func finishSetting() {
-        isSettingHotKey = false
+    private func finishRecording() {
+        isRecording = false
         currentModifiers = []
+        removeMonitor()
+        onConfigurationChanged(configuration)
+    }
+    
+    private func removeMonitor() {
         if let monitor = keyMonitor {
             NSEvent.removeMonitor(monitor)
             keyMonitor = nil
         }
-
-        Settings.current.hotkey = configuration
-        NotificationCenter.default.post(name: NSNotification.Name("HotkeyConfigurationChanged"), object: nil)
     }
     
     private func isModifierKey(_ keyCode: UInt16) -> Bool {
@@ -99,14 +105,36 @@ struct HotKeySectionView: View {
     }
 }
 
-// MARK: - Hot Key View
+// MARK: - Screenshot HotKey Section
+
+/// Section view for configuring the screenshot capture hotkey.
+struct HotKeySectionView: View {
+    @Binding var configuration: HotkeyConfiguration
+    @Binding var isSettingHotKey: Bool
+    @Binding var currentModifiers: NSEvent.ModifierFlags
+    
+    var body: some View {
+        HotKeyRecorderView(
+            sectionTitle: "Global Shortcut",
+            description: "Click the area above then type the desired key combination",
+            configuration: $configuration,
+            onConfigurationChanged: { newConfig in
+                Settings.current.hotkey = newConfig
+                NotificationCenter.default.post(name: NSNotification.Name("HotkeyConfigurationChanged"), object: nil)
+            }
+        )
+    }
+}
+
+// MARK: - HotKey Display View
+
+/// Visual representation of a keyboard shortcut with modifier keys.
 struct HotKeyView: View {
     var configuration: HotkeyConfiguration
     var isActive: Bool
     
     var body: some View {
         HStack(spacing: 6) {
-            // Afficher les modificateurs
             if configuration.modifiers.contains(.command) {
                 KeyView(text: "⌘")
             }
@@ -120,7 +148,6 @@ struct HotKeyView: View {
                 KeyView(text: "⇧")
             }
             
-            // Afficher la touche principale
             if configuration.keyCode != 0 {
                 let keyName = HotkeyConfiguration.displayName(for: configuration.keyCode)
                 KeyView(text: keyName)
@@ -159,13 +186,11 @@ struct HotKeyView: View {
         .animation(.bouncy(duration: 0.3), value: configuration.keyCode)
         .animation(.bouncy(duration: 0.3), value: isActive)
     }
-    
-    private func keyCodeToCharacter(keyCode: UInt16) -> String {
-        HotkeyConfiguration.displayName(for: keyCode)
-    }
 }
 
-// MARK: - Key View
+// MARK: - Single Key View
+
+/// Visual representation of a single keyboard key.
 struct KeyView: View {
     var text: String
     
@@ -202,4 +227,3 @@ struct KeyView: View {
             .shadow(color: .black.opacity(0.3), radius: 6, x: 0, y: 4)
     }
 }
-

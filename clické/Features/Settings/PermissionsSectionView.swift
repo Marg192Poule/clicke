@@ -4,6 +4,7 @@ import AppKit
 import ApplicationServices
 import CoreGraphics
 
+/// Settings section for managing app permissions (accessibility and screen recording).
 struct PermissionsSectionView: View {
     @Binding var showAlert: Bool
     @State private var hasAccessibility = false
@@ -20,11 +21,11 @@ struct PermissionsSectionView: View {
                     icon: "accessibility",
                     status: hasAccessibility,
                     action: {
-                        // D'abord demander la permission (déclenche le popup)
+                        // First request the permission (triggers system popup)
                         requestAccessibilityPermissions()
-                        // Ensuite ouvrir les paramètres après un court délai
+                        // Then open settings after a short delay
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                            openAccessibilitySettings()
+                            openPrivacySettings(section: "Accessibility")
                         }
                     }
                 )
@@ -34,11 +35,11 @@ struct PermissionsSectionView: View {
                     icon: "record.circle",
                     status: hasScreenRecording,
                     action: {
-                        // Demander la permission d'enregistrement d'écran
+                        // Request screen recording permission
                         requestScreenRecordingPermissions()
-                        // Ensuite ouvrir les paramètres après un court délai
+                        // Then open settings after a short delay
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                            openScreenRecordingSettings()
+                            openPrivacySettings(section: "ScreenCapture")
                         }
                     }
                 )
@@ -71,7 +72,7 @@ struct PermissionsSectionView: View {
                             Button {
                                 requestAccessibilityPermissions()
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                                    openAccessibilitySettings()
+                                    openPrivacySettings(section: "Accessibility")
                                 }
                             } label: {
                                 Text("open.accessibility.settings")
@@ -84,7 +85,7 @@ struct PermissionsSectionView: View {
                             Button {
                                 requestScreenRecordingPermissions()
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                                    openScreenRecordingSettings()
+                                    openPrivacySettings(section: "ScreenCapture")
                                 }
                             } label: {
                                 Text("open.screen.recording.settings")
@@ -102,10 +103,10 @@ struct PermissionsSectionView: View {
             Text("permissions")
         }
         .onAppear {
-            // Vérifier immédiatement les permissions au démarrage
+            // Check permissions immediately on startup
             checkAndUpdatePermissions()
             
-            // Toujours démarrer le monitoring pour détecter les changements
+            // Always start monitoring to detect changes
             startPolling()
             startAppActiveMonitoring()
             startPermissionsStatusMonitoring()
@@ -124,7 +125,7 @@ struct PermissionsSectionView: View {
         if newAccessibilityStatus != hasAccessibility {
             hasAccessibility = newAccessibilityStatus
             if newAccessibilityStatus {
-                // Permissions d'accessibilité accordées - notifier pour réenregistrer les hotkeys
+                // Accessibility permissions granted - notify to re-register hotkeys
                 NotificationCenter.default.post(name: NSNotification.Name("AccessibilityPermissionsGranted"), object: nil)
             }
         }
@@ -133,7 +134,7 @@ struct PermissionsSectionView: View {
             hasScreenRecording = newScreenRecordingStatus
         }
         
-        // Arrêter le polling si toutes les permissions sont accordées
+        // Stop polling if all permissions are granted
         if hasAccessibility && hasScreenRecording {
             timerSubscription?.cancel()
             appActiveSubscription?.cancel()
@@ -148,20 +149,20 @@ struct PermissionsSectionView: View {
             }
     }
     
-    /// Surveille quand l'application redevient active (après avoir ouvert les paramètres système)
+    /// Monitors when the application becomes active (after opening system settings).
     private func startAppActiveMonitoring() {
         appActiveSubscription = NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
             .sink { _ in
-                // Vérifier immédiatement quand l'app redevient active
+                // Check immediately when app becomes active
                 checkAndUpdatePermissions()
             }
     }
     
-    /// Surveille les notifications de changement de permissions depuis AppDelegate
+    /// Monitors permission change notifications from AppDelegate.
     private func startPermissionsStatusMonitoring() {
         permissionsStatusSubscription = NotificationCenter.default.publisher(for: NSNotification.Name("PermissionsStatusChanged"))
             .sink { _ in
-                // Mettre à jour immédiatement quand AppDelegate détecte un changement
+                // Update immediately when AppDelegate detects a change
                 DispatchQueue.main.async {
                     checkAndUpdatePermissions()
                 }
@@ -215,46 +216,48 @@ struct PermissionsSectionView: View {
         return AXIsProcessTrustedWithOptions(options as CFDictionary)
     }
     
-    /// Demande explicitement les permissions d'accessibilité (déclenche le popup système)
+    /// Explicitly requests accessibility permissions (triggers system popup).
     private func requestAccessibilityPermissions() {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
         _ = AXIsProcessTrustedWithOptions(options as CFDictionary)
     }
     
-    /// Vérifie les permissions d'enregistrement d'écran
+    /// Checks screen recording permissions.
     private func checkScreenRecordingPermissions() -> Bool {
         if #available(macOS 10.15, *) {
             return CGPreflightScreenCaptureAccess()
         }
-        // Sur les versions antérieures à macOS 10.15, les permissions ne sont pas requises
+        // On versions prior to macOS 10.15, permissions are not required
         return true
     }
     
-    /// Demande explicitement les permissions d'enregistrement d'écran (déclenche le popup système)
+    /// Explicitly requests screen recording permissions (triggers system popup).
     private func requestScreenRecordingPermissions() {
         if #available(macOS 10.15, *) {
             CGRequestScreenCaptureAccess()
         }
     }
     
-    private func openAccessibilitySettings() {
-        // Gérer les différentes versions de macOS
+    /// Opens the System Settings/Preferences for the specified privacy section.
+    /// - Parameter section: The privacy section to open ("Accessibility" or "ScreenCapture").
+    private func openPrivacySettings(section: String) {
+        // Handle different macOS versions
         if #available(macOS 13.0, *) {
-            // macOS Ventura (13.0+) et plus récent - utilise System Settings
-            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+            // macOS Ventura (13.0+) and later - uses System Settings
+            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_\(section)") {
                 NSWorkspace.shared.open(url)
                 return
             }
         }
         
-        // macOS Monterey (12.0) et versions antérieures - utilise System Preferences
-        // Essayer d'abord l'URL moderne
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+        // macOS Monterey (12.0) and earlier - uses System Preferences
+        // Try the modern URL first
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_\(section)") {
             NSWorkspace.shared.open(url)
             return
         }
         
-        // Fallback : ouvrir directement le panneau de sécurité
+        // Fallback: open security preference pane directly
         let prefPanePath = "/System/Library/PreferencePanes/Security.prefPane"
         if FileManager.default.fileExists(atPath: prefPanePath) {
             let prefPaneURL = URL(fileURLWithPath: prefPanePath)
@@ -264,52 +267,13 @@ struct PermissionsSectionView: View {
                 NSWorkspace.shared.open(prefPaneURL)
             }
         } else {
-            // Dernier recours : ouvrir les Préférences Système
+            // Last resort: open System Preferences
             if #available(macOS 10.15, *) {
                 if let systemPrefsURL = URL(string: "file:///System/Applications/System%20Preferences.app") {
                     NSWorkspace.shared.openApplication(at: systemPrefsURL, configuration: NSWorkspace.OpenConfiguration()) { _, _ in }
                 }
             } else {
-                // Pour les versions très anciennes, utiliser l'ancienne méthode
-                if let url = URL(string: "x-apple.systempreferences:") {
-                    NSWorkspace.shared.open(url)
-                }
-            }
-        }
-    }
-    
-    private func openScreenRecordingSettings() {
-        // Gérer les différentes versions de macOS
-        if #available(macOS 13.0, *) {
-            // macOS Ventura (13.0+) et plus récent - utilise System Settings
-            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
-                NSWorkspace.shared.open(url)
-                return
-            }
-        }
-        
-        // macOS Monterey (12.0) et versions antérieures - utilise System Preferences
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
-            NSWorkspace.shared.open(url)
-            return
-        }
-        
-        // Fallback : ouvrir directement le panneau de sécurité
-        let prefPanePath = "/System/Library/PreferencePanes/Security.prefPane"
-        if FileManager.default.fileExists(atPath: prefPanePath) {
-            let prefPaneURL = URL(fileURLWithPath: prefPanePath)
-            if #available(macOS 10.15, *) {
-                NSWorkspace.shared.open([prefPaneURL], withApplicationAt: URL(fileURLWithPath: "/System/Applications/System Preferences.app"), configuration: NSWorkspace.OpenConfiguration()) { _, _ in }
-            } else {
-                NSWorkspace.shared.open(prefPaneURL)
-            }
-        } else {
-            // Dernier recours : ouvrir les Préférences Système
-            if #available(macOS 10.15, *) {
-                if let systemPrefsURL = URL(string: "file:///System/Applications/System%20Preferences.app") {
-                    NSWorkspace.shared.openApplication(at: systemPrefsURL, configuration: NSWorkspace.OpenConfiguration()) { _, _ in }
-                }
-            } else {
+                // For very old versions, use the old method
                 if let url = URL(string: "x-apple.systempreferences:") {
                     NSWorkspace.shared.open(url)
                 }
@@ -317,4 +281,3 @@ struct PermissionsSectionView: View {
         }
     }
 }
-

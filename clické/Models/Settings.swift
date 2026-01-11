@@ -2,6 +2,9 @@ import Foundation
 import AppKit
 import Carbon.HIToolbox
 
+// MARK: - Capture Sound
+
+/// Available system sounds for capture feedback.
 enum CaptureSound: String, Codable, CaseIterable, Identifiable {
     case hero = "Hero"
     case submarine = "Submarine"
@@ -14,35 +17,51 @@ enum CaptureSound: String, Codable, CaseIterable, Identifiable {
     
     var id: String { rawValue }
     
+    /// The system sound name used by macOS.
     var systemSoundName: String {
         switch self {
-        case .hero: return "Hero"           // Modern and satisfying sound
-        case .submarine: return "Submarine" // Distinctive sound
-        case .blow: return "Blow"           // Quick and light sound
-        case .frog: return "Frog"           // Fun sound
-        case .funk: return "Funk"           // Rhythmic sound
-        case .sosumi: return "Sosumi"       // Classic macOS sound
-        case .basso: return "Basso"         // Deep sound
-        case .pop: return "Pop"             // Short and snappy sound
+        case .hero: return "Hero"
+        case .submarine: return "Submarine"
+        case .blow: return "Blow"
+        case .frog: return "Frog"
+        case .funk: return "Funk"
+        case .sosumi: return "Sosumi"
+        case .basso: return "Basso"
+        case .pop: return "Pop"
         }
     }
 }
 
+// MARK: - Settings
+
+/// Application settings stored in UserDefaults.
 struct Settings: Codable, Equatable {
+    /// The keyboard shortcut for screenshot capture.
     var hotkey: HotkeyConfiguration
+    
+    /// The keyboard shortcut for window capture.
     var tabCaptureHotkey: HotkeyConfiguration
     
+    /// Whether to show the app icon in the Dock.
     var showDockIcon: Bool
+    
+    /// Whether to automatically copy captures to clipboard.
     var copyToClipboard: Bool
     
+    /// Whether sound effects are enabled.
     var soundEffectsEnabled: Bool
+    
+    /// Volume level for sound effects (0.0 to 1.0).
     var soundEffectsVolume: Double
+    
+    /// The sound to play when capturing.
     var captureSound: CaptureSound
     
+    /// Default settings configuration.
     static let `default` = Settings(
         hotkey: .default,
         tabCaptureHotkey: HotkeyConfiguration(keyCode: 17, modifiers: [.option, .shift]), // Option+Shift+T
-        showDockIcon: true,  // Temporarily true for testing icon
+        showDockIcon: true,
         copyToClipboard: true,
         soundEffectsEnabled: true,
         soundEffectsVolume: 0.5,
@@ -51,6 +70,8 @@ struct Settings: Codable, Equatable {
     
     private static let settingsKey = "Settings"
     
+    /// The current application settings.
+    /// Reading loads from UserDefaults, writing saves to UserDefaults.
     static var current: Settings {
         get {
             if let data = UserDefaults.standard.data(forKey: settingsKey),
@@ -68,11 +89,17 @@ struct Settings: Codable, Equatable {
     }
 }
 
+// MARK: - Hotkey Configuration
 
+/// Configuration for a keyboard shortcut.
 struct HotkeyConfiguration: Codable, Equatable {
+    /// The key code of the main key.
     var keyCode: UInt16
+    
+    /// The modifier keys required.
     var modifiers: NSEvent.ModifierFlags
     
+    /// Default hotkey: Option+Shift+4.
     static let `default` = HotkeyConfiguration(keyCode: 21, modifiers: [.option, .shift])
     
     var modifierFlagsRaw: UInt {
@@ -102,6 +129,9 @@ struct HotkeyConfiguration: Codable, Equatable {
         case modifierFlagsRaw
     }
     
+    /// Checks if a keyboard event matches this hotkey configuration.
+    /// - Parameter event: The keyboard event to check.
+    /// - Returns: `true` if the event matches this hotkey.
     func matches(event: NSEvent) -> Bool {
         let eventModifiers = event.modifierFlags
         let allowedShortcutModifiers: NSEvent.ModifierFlags = [.command, .option, .control, .shift]
@@ -117,6 +147,7 @@ struct HotkeyConfiguration: Codable, Equatable {
         return event.keyCode == keyCode && eventOnlyModifiers == requiredModifiers
     }
     
+    /// A human-readable string representation of the hotkey.
     var displayString: String {
         var parts: [String] = []
         
@@ -138,6 +169,9 @@ struct HotkeyConfiguration: Codable, Equatable {
         return parts.joined(separator: " ")
     }
     
+    /// Returns the display name for a key code.
+    /// - Parameter keyCode: The key code to convert.
+    /// - Returns: A human-readable key name.
     static func displayName(for keyCode: UInt16) -> String {
         if let name = translateKeyCodeWithCurrentLayout(keyCode) {
             return name

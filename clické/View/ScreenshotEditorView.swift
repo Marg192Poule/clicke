@@ -472,8 +472,6 @@ struct ScreenshotEditorView: View {
                 
                 if vm.config.customColor != .clear {
                     vm.config.selectedMagicPreset = nil
-                    vm.config.selectedGradient = nil
-                    vm.config.selectedSolidColor = nil
                     vm.config.backgroundImageURL = nil
                 }
             }
@@ -492,8 +490,6 @@ struct ScreenshotEditorView: View {
                 let isSelected = viewModel.config.selectedMagicPreset?.id == preset.id && viewModel.config.customColor == .clear
                 Button {
                     viewModel.config.selectedMagicPreset = preset
-                    viewModel.config.selectedGradient = nil
-                    viewModel.config.selectedSolidColor = nil
                     viewModel.config.backgroundImageURL = nil
                     viewModel.config.customColor = .clear
                 } label: {
@@ -812,8 +808,6 @@ struct ScreenshotEditorView: View {
             viewModel.selectedWallpaperURL = item.url
             viewModel.config.backgroundImageURL = item.url
             viewModel.config.selectedMagicPreset = nil
-            viewModel.config.selectedGradient = nil
-            viewModel.config.selectedSolidColor = nil
         } label: {
             Image(nsImage: item.image)
                 .resizable()

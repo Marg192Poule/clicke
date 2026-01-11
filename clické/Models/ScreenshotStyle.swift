@@ -2,6 +2,8 @@ import SwiftUI
 import AppKit
 
 // MARK: - Mockup Style
+
+/// Defines the visual style applied to the screenshot mockup.
 enum MockupStyle: String, CaseIterable, Identifiable {
     case defaultStyle
     case glassEffect
@@ -19,6 +21,8 @@ enum MockupStyle: String, CaseIterable, Identifiable {
 }
 
 // MARK: - Border Style
+
+/// Defines the corner style for screenshot borders.
 enum BorderStyle: String, CaseIterable, Identifiable {
     case sharp
     case curved
@@ -44,6 +48,8 @@ enum BorderStyle: String, CaseIterable, Identifiable {
 }
 
 // MARK: - Background Type
+
+/// Defines the type of background for the screenshot canvas.
 enum BackgroundType: String, CaseIterable, Identifiable {
     case transparent
     case color
@@ -71,113 +77,35 @@ enum BackgroundType: String, CaseIterable, Identifiable {
     }
 }
 
-// MARK: - Magic Color Preset (cached colors for performance)
+// MARK: - Magic Color Preset
+
+/// A solid color preset with optional premium status.
 struct MagicPreset: Identifiable, Equatable {
     let id: UUID
     let colors: [Color]
-    let qisPremium: Bool
+    let isPremium: Bool
     
-    init(colors: [Color], qisPremium: Bool) {
+    init(colors: [Color], isPremium: Bool = false) {
         self.id = UUID()
         self.colors = colors
-        self.qisPremium = qisPremium
+        self.isPremium = isPremium
     }
     
     // Cached presets - created once
     private static let _presets: [MagicPreset] = [
-        MagicPreset(colors: [Color(hex: "ffffff")], qisPremium: false),
-        MagicPreset(colors: [Color(hex: "1a1a1a")], qisPremium: false),
-        MagicPreset(colors: [Color(hex: "667eea")], qisPremium: false),
-        MagicPreset(colors: [Color(hex: "f953c6")], qisPremium: false),
-        MagicPreset(colors: [Color(hex: "11998e")], qisPremium: false),
+        MagicPreset(colors: [Color(hex: "ffffff")]),
+        MagicPreset(colors: [Color(hex: "1a1a1a")]),
+        MagicPreset(colors: [Color(hex: "667eea")]),
+        MagicPreset(colors: [Color(hex: "f953c6")]),
+        MagicPreset(colors: [Color(hex: "11998e")]),
     ]
     
     static var presets: [MagicPreset] { _presets }
 }
 
-// MARK: - Shadow Scene
-struct ShadowScene: Identifiable, Equatable {
-    let id: UUID
-    let name: String
-    let colors: [Color]
-    let isTexture: Bool
-    
-    init(name: String, colors: [Color], isTexture: Bool) {
-        self.id = UUID()
-        self.name = name
-        self.colors = colors
-        self.isTexture = isTexture
-    }
-    
-    private static let _scenes: [ShadowScene] = [
-        ShadowScene(name: "Cream", colors: [Color(hex: "f5e6d3"), Color(hex: "e8d4b8")], isTexture: true),
-        ShadowScene(name: "Sand", colors: [Color(hex: "d4b896"), Color(hex: "c4a576")], isTexture: true),
-        ShadowScene(name: "Paper", colors: [Color(hex: "f8f8f8"), Color(hex: "e8e8e8")], isTexture: true),
-        ShadowScene(name: "Light Wood", colors: [Color(hex: "deb887"), Color(hex: "c4a574")], isTexture: true),
-        ShadowScene(name: "Birch", colors: [Color(hex: "f5deb3"), Color(hex: "daa520")], isTexture: true),
-        ShadowScene(name: "Plant", colors: [Color(hex: "90a955"), Color(hex: "4f772d")], isTexture: true),
-        ShadowScene(name: "Concrete", colors: [Color(hex: "95a5a6"), Color(hex: "7f8c8d")], isTexture: true),
-        ShadowScene(name: "Pine", colors: [Color(hex: "d2b48c"), Color(hex: "bc9b6a")], isTexture: true),
-        ShadowScene(name: "Marble", colors: [Color(hex: "ecf0f1"), Color(hex: "bdc3c7")], isTexture: true),
-        ShadowScene(name: "Oak", colors: [Color(hex: "8b4513"), Color(hex: "654321")], isTexture: true),
-        ShadowScene(name: "Slate", colors: [Color(hex: "708090"), Color(hex: "4a5568")], isTexture: true),
-        ShadowScene(name: "Walnut", colors: [Color(hex: "5d4037"), Color(hex: "3e2723")], isTexture: true),
-        ShadowScene(name: "Black Marble", colors: [Color(hex: "2c3e50"), Color(hex: "1a252f")], isTexture: true),
-        ShadowScene(name: "Grunge", colors: [Color(hex: "3d3d3d"), Color(hex: "1a1a1a")], isTexture: true),
-        ShadowScene(name: "Metal", colors: [Color(hex: "4a4a4a"), Color(hex: "2d2d2d")], isTexture: true),
-        ShadowScene(name: "Gold", colors: [Color(hex: "ffd700"), Color(hex: "b8860b")], isTexture: true),
-    ]
-    
-    static var scenes: [ShadowScene] { _scenes }
-}
-
-// MARK: - Solid Colors
-struct SolidColor: Identifiable, Equatable {
-    let id: UUID
-    let color: Color
-    
-    init(color: Color) {
-        self.id = UUID()
-        self.color = color
-    }
-    
-    private static let _colors: [SolidColor] = [
-        SolidColor(color: Color(hex: "f8f9fa")),
-        SolidColor(color: Color(hex: "343a40")),
-        SolidColor(color: Color(hex: "adb5bd")),
-        SolidColor(color: Color(hex: "dee2e6")),
-    ]
-    
-    static var colors: [SolidColor] { _colors }
-}
-
-// MARK: - Gradient Presets
-struct GradientPreset: Identifiable, Equatable {
-    let id: UUID
-    let colors: [Color]
-    let angle: Double
-    
-    init(colors: [Color], angle: Double) {
-        self.id = UUID()
-        self.colors = colors
-        self.angle = angle
-    }
-    
-    private static let _presets: [GradientPreset] = [
-        GradientPreset(colors: [Color(hex: "ff6b6b"), Color(hex: "feca57")], angle: 135),
-        GradientPreset(colors: [Color(hex: "667eea"), Color(hex: "764ba2")], angle: 135),
-        GradientPreset(colors: [Color(hex: "a8edea"), Color(hex: "fed6e3")], angle: 135),
-        GradientPreset(colors: [Color(hex: "11998e"), Color(hex: "38ef7d")], angle: 135),
-        GradientPreset(colors: [Color(hex: "fc466b"), Color(hex: "3f5efb")], angle: 135),
-        GradientPreset(colors: [Color(hex: "00c6fb"), Color(hex: "005bea")], angle: 135),
-        GradientPreset(colors: [Color(hex: "f093fb"), Color(hex: "f5576c")], angle: 135),
-        GradientPreset(colors: [Color(hex: "4facfe"), Color(hex: "00f2fe")], angle: 135),
-    ]
-    
-    static var presets: [GradientPreset] { _presets }
-}
-
 // MARK: - Gradient Style
+
+/// Defines the type of gradient effect.
 enum GradientStyle: String, CaseIterable, Identifiable {
     case linear
     case radial
@@ -203,6 +131,8 @@ enum GradientStyle: String, CaseIterable, Identifiable {
 }
 
 // MARK: - Simple Gradient Configuration
+
+/// Configuration for gradient backgrounds with effects.
 struct SimpleGradientConfig: Equatable {
     var style: GradientStyle = .linear
     var color1: Color = Color(hex: "667eea")
@@ -265,6 +195,8 @@ struct SimpleGradientConfig: Equatable {
 }
 
 // MARK: - Grain/Noise Overlay
+
+/// A view that applies a film grain noise effect.
 struct GrainOverlay: View {
     let intensity: Double
     
@@ -279,6 +211,8 @@ struct GrainOverlay: View {
 }
 
 // MARK: - Simple Gradient Presets
+
+/// A pre-configured gradient preset.
 struct SimpleGradientPreset: Identifiable, Equatable {
     let id: UUID
     let name: String
@@ -315,22 +249,9 @@ struct SimpleGradientPreset: Identifiable, Equatable {
     static var presets: [SimpleGradientPreset] { _presets }
 }
 
-// MARK: - Shadow Scene Mode
-enum ShadowSceneMode: String, CaseIterable, Identifiable {
-    case underlay
-    case overlay
-    
-    var id: String { rawValue }
-    
-    var displayName: String {
-        switch self {
-        case .underlay: return "Underlay"
-        case .overlay: return "Overlay"
-        }
-    }
-}
-
 // MARK: - Text Overlay
+
+/// A text element that can be placed on the screenshot.
 struct TextOverlay: Identifiable, Equatable {
     let id = UUID()
     var text: String = "Text"
@@ -344,12 +265,15 @@ struct TextOverlay: Identifiable, Equatable {
 }
 
 // MARK: - Redact Region
+
+/// A region of the screenshot to be redacted/obscured.
 struct RedactRegion: Identifiable, Equatable {
     let id = UUID()
     var rect: CGRect
     var style: RedactStyle = .blur
 }
 
+/// Defines the style of redaction to apply.
 enum RedactStyle: String, CaseIterable, Identifiable {
     case blur
     case pixelate
@@ -383,6 +307,8 @@ enum RedactStyle: String, CaseIterable, Identifiable {
 }
 
 // MARK: - Social Media Export Presets
+
+/// A preset for exporting screenshots to social media platforms.
 struct SocialMediaPreset: Identifiable, Equatable {
     let id: UUID
     let platform: String
@@ -435,6 +361,8 @@ struct SocialMediaPreset: Identifiable, Equatable {
 }
 
 // MARK: - Screenshot Style Configuration
+
+/// Complete configuration for screenshot styling and export.
 struct ScreenshotStyleConfig: Equatable {
     // Mockup
     var mockupStyle: MockupStyle = .defaultStyle
@@ -459,19 +387,12 @@ struct ScreenshotStyleConfig: Equatable {
     // Background
     var backgroundType: BackgroundType = .image
     var selectedMagicPreset: MagicPreset? = nil
-    var selectedShadowScene: ShadowScene? = nil
-    var selectedSolidColor: SolidColor? = nil
-    var selectedGradient: GradientPreset? = nil
     var backgroundImageURL: URL? = nil
     var customColor: Color = .white
     
     // Simple Gradient
     var gradientConfig: SimpleGradientConfig = SimpleGradientPreset.presets.first?.config ?? .default
     var selectedGradientPreset: SimpleGradientPreset? = SimpleGradientPreset.presets.first
-    
-    // Shadow Scene
-    var shadowSceneMode: ShadowSceneMode = .underlay
-    var shadowSceneOpacity: Double = 80
     
     // Text Overlays
     var textOverlays: [TextOverlay] = []
@@ -493,8 +414,9 @@ struct ScreenshotStyleConfig: Equatable {
     
     static let `default` = ScreenshotStyleConfig()
     
-    // MARK: - Transform Hash (for consolidated animations)
-    /// Hash of transform properties for a single consolidated animation
+    // MARK: - Transform Hash
+    
+    /// Hash of transform properties for consolidated animations.
     var transformHash: Int {
         var hasher = Hasher()
         hasher.combine(rotation)
@@ -506,8 +428,9 @@ struct ScreenshotStyleConfig: Equatable {
         return hasher.finalize()
     }
     
-    // MARK: - Render Hash (for cache invalidation)
-    /// Hash of properties that affect final render (for cache invalidation)
+    // MARK: - Render Hash
+    
+    /// Hash of properties that affect final render (for cache invalidation).
     var renderHash: Int {
         var hasher = Hasher()
         hasher.combine(mockupStyle)
@@ -523,14 +446,19 @@ struct ScreenshotStyleConfig: Equatable {
         hasher.combine(gradientConfig.style)
         hasher.combine(gradientConfig.angle)
         hasher.combine(gradientConfig.blurAmount)
+        hasher.combine(gradientConfig.noiseAmount)
         hasher.combine(gradientConfig.saturation)
         hasher.combine(gradientConfig.brightness)
         hasher.combine(padding)
         hasher.combine(selectedSocialPreset?.id)
+        hasher.combine(selectedMagicPreset?.id)
+        hasher.combine(textOverlays.count)
+        hasher.combine(redactRegions.count)
         return hasher.finalize()
     }
     
-    // MARK: - Optimized Equatable (only compare what matters for rendering)
+    // MARK: - Equatable
+    
     static func == (lhs: ScreenshotStyleConfig, rhs: ScreenshotStyleConfig) -> Bool {
         // Quick check with render hash first
         guard lhs.renderHash == rhs.renderHash else { return false }

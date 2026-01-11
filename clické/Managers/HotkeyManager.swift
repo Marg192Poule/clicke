@@ -2,9 +2,11 @@ import AppKit
 import ApplicationServices
 
 /// Manager for registering and detecting global keyboard shortcuts.
-/// Supports multiple hotkeys (screenshot and tabCapture).
+/// Supports multiple hotkeys (screenshot and tab capture).
 class HotkeyManager {
-    // MARK: - Hotkey Handlers
+    
+    // MARK: - Hotkey Handler
+    
     private struct HotkeyHandler {
         var globalMonitor: Any?
         var localMonitor: Any?
@@ -16,12 +18,15 @@ class HotkeyManager {
     private var tabCaptureHandler: HotkeyHandler?
     
     // MARK: - Initialization
+    
     init() {
         // Handlers will be configured via setHotkeyHandler methods
     }
     
     // MARK: - Screenshot Hotkey
-    /// Configure le callback pour le hotkey de screenshot
+    
+    /// Configures the callback for the screenshot hotkey.
+    /// - Parameter handler: The closure to execute when the hotkey is pressed.
     func setScreenshotHotkeyHandler(_ handler: @escaping () -> Void) {
         screenshotHandler = HotkeyHandler(
             globalMonitor: nil,
@@ -32,7 +37,9 @@ class HotkeyManager {
     }
     
     // MARK: - Tab Capture Hotkey
-    /// Configure le callback pour le hotkey de tab capture
+    
+    /// Configures the callback for the tab capture hotkey.
+    /// - Parameter handler: The closure to execute when the hotkey is pressed.
     func setTabCaptureHotkeyHandler(_ handler: @escaping () -> Void) {
         tabCaptureHandler = HotkeyHandler(
             globalMonitor: nil,
@@ -43,7 +50,8 @@ class HotkeyManager {
     }
     
     // MARK: - Register All Hotkeys
-    /// Registers all configured hotkeys
+    
+    /// Registers all configured hotkeys with the system.
     func registerAllHotkeys() {
         unregisterAllHotkeys()
         
@@ -95,7 +103,8 @@ class HotkeyManager {
     }
     
     // MARK: - Unregister All Hotkeys
-    /// Unregisters all hotkeys
+    
+    /// Unregisters all hotkeys from the system.
     func unregisterAllHotkeys() {
         // Unregister screenshot hotkey
         if let globalMonitor = screenshotHandler?.globalMonitor {
@@ -118,53 +127,12 @@ class HotkeyManager {
         tabCaptureHandler?.localMonitor = nil
     }
     
-    // MARK: - Update Configurations
-    /// Updates screenshot hotkey configuration and re-registers
-    func updateScreenshotHotkeyConfiguration(_ config: HotkeyConfiguration) {
-        var settings = Settings.current
-        settings.hotkey = config
-        Settings.current = settings
-        registerAllHotkeys()
-    }
-    
-    /// Updates tab capture hotkey configuration and re-registers
-    func updateTabCaptureHotkeyConfiguration(_ config: HotkeyConfiguration) {
-        var settings = Settings.current
-        settings.tabCaptureHotkey = config
-        Settings.current = settings
-        registerAllHotkeys()
-    }
-    
-    // MARK: - Legacy Support (pour compatibilité)
-    /// Configure le callback à appeler quand le raccourci est pressé (legacy - utilise screenshot)
-    func setHotkeyHandler(_ handler: @escaping () -> Void) {
-        setScreenshotHotkeyHandler(handler)
-    }
-    
-    /// Enregistre le raccourci global avec la configuration actuelle (legacy - utilise screenshot)
-    func registerHotkey() {
-        registerAllHotkeys()
-    }
-    
-    /// Désenregistre le raccourci (legacy)
-    func unregisterHotkey() {
-        unregisterAllHotkeys()
-    }
-    
-    /// Met à jour la configuration et réenregistre le raccourci (legacy - utilise screenshot)
-    func updateConfiguration(_ config: HotkeyConfiguration) {
-        updateScreenshotHotkeyConfiguration(config)
-    }
-    
     // MARK: - Permissions
-    /// Checks accessibility permissions (without triggering popup)
+    
+    /// Checks accessibility permissions without triggering a popup.
+    /// - Returns: `true` if accessibility permissions are granted.
     static func checkAccessibilityPermissions() -> Bool {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: false]
         return AXIsProcessTrustedWithOptions(options as CFDictionary)
-    }
-    
-    // Legacy alias
-    static func checkAccessibilityPermission() -> Bool {
-        return checkAccessibilityPermissions()
     }
 }

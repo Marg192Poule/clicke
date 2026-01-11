@@ -8,7 +8,7 @@ internal import Combine
 final class WallpaperCache {
     static let shared = WallpaperCache()
     
-    // NSCache avec limite de mémoire automatique
+    // NSCache with automatic memory limit management
     private let thumbnailCache = NSCache<NSURL, NSImage>()
     private var wallpaperURLs: [URL] = []
     private(set) var isLoaded = false
@@ -183,8 +183,6 @@ class ScreenshotEditorViewModel: ObservableObject {
             defaultConfig.backgroundImageURL = url
             defaultConfig.backgroundType = .image
             defaultConfig.selectedMagicPreset = nil
-            defaultConfig.selectedGradient = nil
-            defaultConfig.selectedSolidColor = nil
             self.selectedWallpaperURL = url
             
             let thumb = image.resizedProportionally(maxSize: NSSize(width: 400, height: 300))
@@ -304,8 +302,6 @@ class ScreenshotEditorViewModel: ObservableObject {
                         self.selectedWallpaperURL = url
                         self.config.backgroundImageURL = url
                         self.config.selectedMagicPreset = nil
-                        self.config.selectedGradient = nil
-                        self.config.selectedSolidColor = nil
                     }
                 }
             }
@@ -329,7 +325,7 @@ class ScreenshotEditorViewModel: ObservableObject {
         NSPasteboard.general.writeObjects([img])
         
         // Show feedback via ToastManager singleton
-        ToastManager().show(message: "Copied", icon: "doc.on.clipboard.fill", success: true)
+        ToastManager.shared.show(message: "Copied", icon: "doc.on.clipboard.fill", success: true)
     }
     
     // MARK: - Save Action

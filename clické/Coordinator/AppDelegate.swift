@@ -3,6 +3,37 @@ import SwiftUI
 import ApplicationServices
 import CoreGraphics
 
+// MARK: - Capture Mode
+
+/// Defines the type of screen capture to perform.
+enum CaptureMode {
+    case area      // Interactive area selection (-i flag)
+    case window    // Window capture (-w flag)
+    
+    var screencaptureFlag: String {
+        switch self {
+        case .area: return "-i"
+        case .window: return "-w"
+        }
+    }
+    
+    var successMessage: String {
+        switch self {
+        case .area: return String(localized: "copied")
+        case .window: return String(localized: "window captured")
+        }
+    }
+    
+    var icon: String {
+        switch self {
+        case .area: return "doc.on.clipboard.fill"
+        case .window: return "macwindow"
+        }
+    }
+}
+
+// MARK: - App Delegate
+
 class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var statusItem: NSStatusItem?
     private let toastManager = ToastManager()
@@ -60,6 +91,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // Apply initial setting
         updateDockIconVisibility()
     }
+    
+    // MARK: - Permissions Monitoring
     
     /// Starts continuous background permissions checking
     private func startContinuousPermissionsCheck() {
@@ -167,20 +200,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
     
+    // MARK: - Hotkey Setup
+    
     private func setupHotkeys() {
         // Configure handler for screenshot
         hotkeyManager.setScreenshotHotkeyHandler { [weak self] in
-            self?.screenshotCapture()
+            self?.performCapture(mode: .area)
         }
         
         // Configure handler for tab capture
         hotkeyManager.setTabCaptureHotkeyHandler { [weak self] in
-            self?.tabCapture()
+            self?.performCapture(mode: .window)
         }
         
         // Register all hotkeys
         hotkeyManager.registerAllHotkeys()
     }
+
+    // MARK: - Menu Bar Setup
 
     private func setupMenuBar() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -228,18 +265,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         statusItem?.menu = menu
     }
 
+    // MARK: - Capture Actions
+    
     @objc private func screenshotCapture() {
-        // Check permissions before capturing
-        // If permissions are not granted, we cannot capture
-        // Note: screencapture itself may trigger a popup if permissions are not granted
-        // but we try to avoid it by checking first
-        
-        // Use macOS native interface
+        performCapture(mode: .area)
+    }
+    
+    @objc private func tabCapture() {
+        performCapture(mode: .window)
+    }
+    
+    /// Performs a screen capture with the specified mode.
+    /// - Parameter mode: The capture mode (area selection or window)
+    private func performCapture(mode: CaptureMode) {
         let pasteboardCountBefore = NSPasteboard.general.changeCount
         
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-        task.arguments = ["-i", "-c", "-x"] // -i = native interactive, -c = clipboard, -x = no sound
+        task.arguments = [mode.screencaptureFlag, "-c", "-x"] // -c = clipboard, -x = no sound
         
         do {
             try task.run()
@@ -257,61 +300,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 )?.first as? NSImage {
                     // Show interactive toast with Edit option
                     toastManager.showWithEditOption(
-                        message: String(localized: "copied"),
-                        icon: "doc.on.clipboard.fill",
+                        message: mode.successMessage,
+                        icon: mode.icon,
                         screenshotImage: image
                     )
                 } else {
                     // Fallback to simple toast
                     toastManager.show(
-                        message: String(localized: "copied"),
-                        icon: "doc.on.clipboard.fill",
-                        success: true
-                    )
-                }
-            }
-        } catch {
-            toastManager.show(
-                message: String(localized: "error"),
-                icon: "xmark.circle.fill",
-                success: false
-            )
-        }
-    }
-    
-    @objc private func tabCapture() {
-        // Get active window and capture only the tab/window
-        let pasteboardCountBefore = NSPasteboard.general.changeCount
-        
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-        task.arguments = ["-w", "-c", "-x"] // -w = window only, -c = clipboard, -x = no sound
-        
-        do {
-            try task.run()
-            task.waitUntilExit()
-            
-            // Vérifier si une capture a été faite
-            if NSPasteboard.general.changeCount != pasteboardCountBefore {
-                // Jouer le son de capture
-                playCaptureSound()
-                
-                // Récupérer l'image du presse-papier
-                if let image = NSPasteboard.general.readObjects(
-                    forClasses: [NSImage.self],
-                    options: nil
-                )?.first as? NSImage {
-                    // Afficher le toast interactif avec option Edit
-                    toastManager.showWithEditOption(
-                        message: String(localized: "window captured"),
-                        icon: "macwindow",
-                        screenshotImage: image
-                    )
-                } else {
-                    // Fallback au toast simple
-                    toastManager.show(
-                        message: String(localized: "window captured"),
-                        icon: "macwindow",
+                        message: mode.successMessage,
+                        icon: mode.icon,
                         success: true
                     )
                 }
@@ -334,6 +331,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             volume: Float(settings.soundEffectsVolume)
         )
     }
+    
+    // MARK: - Settings Window
     
     @objc private func openSettings() {
         if settingsWindow == nil {
@@ -363,6 +362,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
     
+    // MARK: - Notification Handlers
+    
     @objc private func dockIconChanged() {
         updateDockIconVisibility()
     }
@@ -376,7 +377,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
     
-    @objc private func quitApp(){
+    @objc private func quitApp() {
         NSApp.terminate(nil)
     }
     
@@ -400,4 +401,3 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         permissionsCheckTimer?.invalidate()
     }
 }
-

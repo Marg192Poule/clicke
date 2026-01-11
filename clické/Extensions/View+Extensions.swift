@@ -1,10 +1,11 @@
 import SwiftUI
 
 // MARK: - Glass Effect Modifier
+
+/// A view modifier that applies a frosted glass effect.
 struct GlassEffectModifier: ViewModifier {
     var material: Material = .regularMaterial
     var cornerRadius: CGFloat = 12
-    var opacity: Double = 0.8
     
     func body(content: Content) -> some View {
         content
@@ -32,12 +33,19 @@ struct GlassEffectModifier: ViewModifier {
 }
 
 extension View {
-    func glassEffect(_ material: Material = .regularMaterial, cornerRadius: CGFloat = 12, opacity: Double = 0.8) -> some View {
-        modifier(GlassEffectModifier(material: material, cornerRadius: cornerRadius, opacity: opacity))
+    /// Applies a frosted glass effect to the view.
+    /// - Parameters:
+    ///   - material: The material type for the glass effect.
+    ///   - cornerRadius: The corner radius of the glass background.
+    /// - Returns: A view with the glass effect applied.
+    func glassEffect(_ material: Material = .regularMaterial, cornerRadius: CGFloat = 12) -> some View {
+        modifier(GlassEffectModifier(material: material, cornerRadius: cornerRadius))
     }
 }
 
 // MARK: - Button Glass Style
+
+/// A button style with a glass effect background.
 struct GlassButtonStyle: ButtonStyle {
     var isSelected: Bool = false
     
@@ -59,6 +67,8 @@ struct GlassButtonStyle: ButtonStyle {
 }
 
 // MARK: - Icon Button Style
+
+/// A button style for icon buttons with a glass effect.
 struct GlassIconButtonStyle: ButtonStyle {
     var size: CGFloat = 36
     var isSelected: Bool = false
@@ -80,7 +90,11 @@ struct GlassIconButtonStyle: ButtonStyle {
 }
 
 // MARK: - Color Extension for Hex
+
 extension Color {
+    /// Creates a color from a hexadecimal string.
+    /// - Parameter hex: A hex color string (3, 6, or 8 characters, with or without #).
+    /// - Examples: "fff", "ffffff", "ffffffff", "#ff0000"
     init(hex: String) {
         let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
         var int: UInt64 = 0
@@ -105,4 +119,3 @@ extension Color {
         )
     }
 }
-

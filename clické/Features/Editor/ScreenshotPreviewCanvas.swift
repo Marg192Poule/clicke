@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 
+/// The main canvas view for previewing and editing screenshots.
 struct ScreenshotPreviewCanvas: View {
     let image: NSImage
     let config: ScreenshotStyleConfig
@@ -40,21 +41,8 @@ struct ScreenshotPreviewCanvas: View {
                 }
             }
             
-            // Shadow scene underlay
-            if config.shadowSceneMode == .underlay && config.selectedShadowScene != nil {
-                shadowSceneOverlay
-                    .opacity(config.shadowSceneOpacity / 100)
-            }
-            
             // Screenshot with transforms
             screenshotLayer
-            
-            // Shadow scene overlay
-            if config.shadowSceneMode == .overlay && config.selectedShadowScene != nil {
-                shadowSceneOverlay
-                    .opacity(config.shadowSceneOpacity / 100)
-                    .blendMode(.overlay)
-            }
             
             // Text overlays
             ForEach(config.textOverlays) { overlay in
@@ -65,7 +53,8 @@ struct ScreenshotPreviewCanvas: View {
         .clipShape(RoundedRectangle(cornerRadius: canvasCornerRadius))
     }
     
-    // MARK: - Screenshot Layer (consolidated transforms)
+    // MARK: - Screenshot Layer
+    
     @ViewBuilder
     private var screenshotLayer: some View {
         let content = Group {
@@ -116,6 +105,7 @@ struct ScreenshotPreviewCanvas: View {
     }
     
     // MARK: - Text Overlay View
+    
     @ViewBuilder
     private func textOverlayView(_ overlay: TextOverlay) -> some View {
         Text(overlay.text)
@@ -128,6 +118,7 @@ struct ScreenshotPreviewCanvas: View {
     }
     
     // MARK: - Redact Region View
+    
     @ViewBuilder
     private func redactRegionView(_ region: RedactRegion) -> some View {
         Group {
@@ -145,28 +136,6 @@ struct ScreenshotPreviewCanvas: View {
         }
         .frame(width: region.rect.width, height: region.rect.height)
         .position(x: region.rect.midX, y: region.rect.midY)
-    }
-    
-    // MARK: - Shadow Scene Overlay
-    @ViewBuilder
-    private var shadowSceneOverlay: some View {
-        if let scene = config.selectedShadowScene {
-            LinearGradient(
-                colors: scene.colors.map { $0.opacity(0.3) },
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .mask {
-                Canvas { context, size in
-                    for i in stride(from: -size.height, to: size.width + size.height, by: 40) {
-                        var path = Path()
-                        path.move(to: CGPoint(x: i, y: 0))
-                        path.addLine(to: CGPoint(x: i + size.height, y: size.height))
-                        context.stroke(path, with: .color(.white), lineWidth: 20)
-                    }
-                }
-            }
-        }
     }
     
     // MARK: - Dimensions
@@ -205,6 +174,7 @@ struct ScreenshotPreviewCanvas: View {
     }
     
     // MARK: - Screenshot Content
+    
     @ViewBuilder
     private var screenshotContent: some View {
         if config.showMockup {
@@ -216,6 +186,7 @@ struct ScreenshotPreviewCanvas: View {
     }
     
     // MARK: - Background View
+    
     @ViewBuilder
     private var backgroundView: some View {
         Group {
@@ -249,12 +220,6 @@ struct ScreenshotPreviewCanvas: View {
         Group {
             if let magic = config.selectedMagicPreset {
                 magicGradient(magic)
-            } else if let scene = config.selectedShadowScene {
-                sceneBackground(scene)
-            } else if let solid = config.selectedSolidColor {
-                solid.color
-            } else if let gradient = config.selectedGradient {
-                LinearGradient(colors: gradient.colors, startPoint: .leading, endPoint: .trailing)
             } else {
                 config.customColor
             }
@@ -286,8 +251,6 @@ struct ScreenshotPreviewCanvas: View {
                 } else {
                     colorBackground
                 }
-            } else if let scene = config.selectedShadowScene {
-                sceneBackground(scene)
             } else {
                 colorBackground
             }
@@ -309,7 +272,7 @@ struct ScreenshotPreviewCanvas: View {
         }
     }
     
-    /// Loads background image asynchronously via centralized service
+    /// Loads background image asynchronously via centralized service.
     private func loadBackgroundImageAsync(from url: URL) {
         currentLoadingURL = url
         
@@ -336,17 +299,8 @@ struct ScreenshotPreviewCanvas: View {
         }
     }
     
-    @ViewBuilder
-    private func sceneBackground(_ scene: ShadowScene) -> some View {
-        if isRendering {
-            LinearGradient(colors: scene.colors, startPoint: .top, endPoint: .bottom)
-        } else {
-            LinearGradient(colors: scene.colors, startPoint: .top, endPoint: .bottom)
-                .noiseOverlay(intensity: 0.15)
-        }
-    }
-    
     // MARK: - Styled Screenshot
+    
     @ViewBuilder
     private var styledScreenshot: some View {
         switch config.mockupStyle {
@@ -386,6 +340,8 @@ struct ScreenshotPreviewCanvas: View {
 }
 
 // MARK: - Checkerboard View (GPU-accelerated)
+
+/// A GPU-accelerated checkerboard pattern for transparent backgrounds.
 struct CheckerboardView: View {
     let squareSize: CGFloat = 12
     
@@ -395,6 +351,8 @@ struct CheckerboardView: View {
 }
 
 // MARK: - Pixelate View (GPU-accelerated)
+
+/// A GPU-accelerated pixelation effect view.
 struct PixelateView: View {
     var body: some View {
         PixelateShaderView(pixelSize: 8)
