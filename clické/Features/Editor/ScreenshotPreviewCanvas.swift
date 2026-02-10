@@ -271,7 +271,6 @@ struct CanvasItemView: View {
         }
 
         content
-            .scaleEffect(item.scale)
             .rotationEffect(.degrees(item.rotation))
             .rotation3DEffect(
                 .degrees(item.rotationX),

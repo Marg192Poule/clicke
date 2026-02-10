@@ -348,23 +348,22 @@ struct ScreenshotEditorView: View {
 
         Section("transform") {
             LabeledContent("image scale") {
-                OptimizedSlider(
-                    value: selectedItemBinding(\.imageScale),
-                    range: 10...200,
-                    defaultValue: 100,
-                    showValue: true,
-                    unit: "%"
-                )
-            }
-
-            LabeledContent("scale") {
-                OptimizedSlider(
-                    value: selectedItemBinding(\.scale),
-                    range: 0.1...3.0,
-                    defaultValue: 1.0,
-                    showValue: true,
-                    decimals: 2
-                )
+                HStack(spacing: 4) {
+                    OptimizedSlider(
+                        value: selectedItemBinding(\.imageScale),
+                        range: 10...200,
+                        defaultValue: 100,
+                        showValue: true,
+                        unit: "%"
+                    )
+                    Button {
+                        viewModel.updateSelectedItem { $0.imageScale = 100 }
+                    } label: {
+                        Image(systemName: "arrow.counterclockwise")
+                    }
+                    .buttonStyle(.bordered)
+                    .help("Reset to 100%")
+                }
             }
 
             LabeledContent("rotation") {
