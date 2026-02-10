@@ -148,6 +148,10 @@ class ScreenshotEditorViewModel: ObservableObject {
     @Published var offset: CGSize = .zero
     @Published var lastOffset: CGSize = .zero
     @Published var selectedWallpaperURL: URL? = nil
+
+    // Multi-image support
+    @Published var canvasItems: [CanvasItem] = []
+    @Published var selectedItemID: UUID? = nil
     
     // Text overlay input
     @Published var newTextContent: String = ""
@@ -173,9 +177,9 @@ class ScreenshotEditorViewModel: ObservableObject {
     init(originalImage: NSImage, toastManager: ToastManager? = nil) {
         self.originalImage = originalImage
         self.toastManager = toastManager
-        
+
         var defaultConfig = ScreenshotStyleConfig.default
-        
+
         // Load default image from bundle only
         if let url = Bundle.main.url(forResource: "Black and White Gradient Macbook Wallpaper_Texture", withExtension: "png", subdirectory: "public") ??
            Bundle.main.url(forResource: "Black and White Gradient Macbook Wallpaper_Texture", withExtension: "png"),
@@ -184,13 +188,18 @@ class ScreenshotEditorViewModel: ObservableObject {
             defaultConfig.backgroundType = .image
             defaultConfig.selectedMagicPreset = nil
             self.selectedWallpaperURL = url
-            
+
             let thumb = image.resizedProportionally(maxSize: NSSize(width: 400, height: 300))
             self.wallpaperImages = [(url, thumb ?? image)]
         }
-        
+
         self.config = defaultConfig
-        
+
+        // Create the initial canvas item from the original image
+        let initialItem = CanvasItem(image: originalImage)
+        self.canvasItems = [initialItem]
+        self.selectedItemID = initialItem.id
+
         // Setup debounced config updates
         setupConfigDebouncing()
     }
@@ -220,19 +229,19 @@ class ScreenshotEditorViewModel: ObservableObject {
     /// Returns the rendered image, using cache if available
     private func getRenderedImage() -> NSImage? {
         let currentHash = config.renderHash
-        
+
         // Use cache if valid
         if cachedRenderHash == currentHash, let cached = cachedRenderedImage {
             return cached
         }
-        
+
         // Render and cache
-        let renderer = ScreenshotRenderer(image: originalImage, config: config)
+        let renderer = ScreenshotRenderer(items: canvasItems, config: config)
         let rendered = renderer.render()
-        
+
         cachedRenderedImage = rendered
         cachedRenderHash = currentHash
-        
+
         return rendered
     }
     
@@ -252,8 +261,9 @@ class ScreenshotEditorViewModel: ObservableObject {
             totalWidth = CGFloat(preset.width)
             totalHeight = CGFloat(preset.height)
         } else {
-            totalWidth = originalImage.size.width + config.padding * 2
-            totalHeight = originalImage.size.height + config.padding * 2
+            let refImage = canvasItems.max(by: { $0.image.size.width * $0.image.size.height < $1.image.size.width * $1.image.size.height })?.image ?? originalImage
+            totalWidth = refImage.size.width + config.padding * 2
+            totalHeight = refImage.size.height + config.padding * 2
         }
         
         // Allow zoom > 100% if canvas is smaller than available space (max 150%)
@@ -434,9 +444,77 @@ class ScreenshotEditorViewModel: ObservableObject {
     }
     
     func resetScreenshotOffset() {
-        config.screenshotOffset = .zero
+        if let index = selectedItemIndex {
+            canvasItems[index].offset = .zero
+        }
     }
     
+    // MARK: - Multi-Image Actions
+
+    var selectedItem: CanvasItem? {
+        guard let id = selectedItemID else { return nil }
+        return canvasItems.first { $0.id == id }
+    }
+
+    var selectedItemIndex: Int? {
+        guard let id = selectedItemID else { return nil }
+        return canvasItems.firstIndex { $0.id == id }
+    }
+
+    func addImage(_ image: NSImage) {
+        var newItem = CanvasItem(image: image)
+        let offsetAmount = CGFloat(canvasItems.count) * 30
+        newItem.offset = CGSize(width: offsetAmount, height: offsetAmount)
+        newItem.zIndex = Double(canvasItems.count)
+        canvasItems.append(newItem)
+        selectedItemID = newItem.id
+        invalidateRenderCache()
+    }
+
+    func addImageFromFile() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowedContentTypes = [.image, .jpeg, .png, .heic, .tiff]
+        panel.message = "Select images to add to the canvas"
+
+        if panel.runModal() == .OK {
+            for url in panel.urls {
+                if let image = NSImage(contentsOf: url) {
+                    addImage(image)
+                }
+            }
+        }
+    }
+
+    func removeSelectedItem() {
+        guard canvasItems.count > 1, let id = selectedItemID else { return }
+        canvasItems.removeAll { $0.id == id }
+        selectedItemID = canvasItems.last?.id
+        invalidateRenderCache()
+    }
+
+    func updateSelectedItem(_ transform: (inout CanvasItem) -> Void) {
+        guard let index = selectedItemIndex else { return }
+        transform(&canvasItems[index])
+        invalidateRenderCache()
+    }
+
+    func bringSelectedToFront() {
+        guard let index = selectedItemIndex else { return }
+        let maxZ = canvasItems.map(\.zIndex).max() ?? 0
+        canvasItems[index].zIndex = maxZ + 1
+        invalidateRenderCache()
+    }
+
+    func sendSelectedToBack() {
+        guard let index = selectedItemIndex else { return }
+        let minZ = canvasItems.map(\.zIndex).min() ?? 0
+        canvasItems[index].zIndex = minZ - 1
+        invalidateRenderCache()
+    }
+
     // MARK: - Gradient Actions
     func randomizeGradient() {
         let baseHue = Double.random(in: 0...1)

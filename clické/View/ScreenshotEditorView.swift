@@ -14,6 +14,7 @@ struct ScreenshotEditorView: View {
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var colorPanelObserver: NSObjectProtocol?
     @State private var colorPanelCloseObserver: NSObjectProtocol?
+    @Namespace private var backgroundTypeAnimation
     
     
     init(originalImage: NSImage, onCopy: @escaping (NSImage) -> Void, onClose: @escaping () -> Void) {
@@ -107,9 +108,16 @@ struct ScreenshotEditorView: View {
         }
         
         ToolbarItem(placement: .automatic) {
+            Button(action: viewModel.addImageFromFile) {
+                Image(systemName: "plus.rectangle.on.rectangle")
+            }
+            .help("Add Image")
+        }
+
+        ToolbarItem(placement: .automatic) {
             Spacer()
         }
-        
+
         ToolbarItem(placement: .automatic) {
             Button {
                 viewModel.copyAsPNG()
@@ -199,20 +207,107 @@ struct ScreenshotEditorView: View {
         .help(label)
     }
     
+    // MARK: - Selected Item Binding Helper
+
+    private func selectedItemBinding<T>(_ keyPath: WritableKeyPath<CanvasItem, T>) -> Binding<T> {
+        Binding(
+            get: {
+                if let item = viewModel.selectedItem {
+                    return item[keyPath: keyPath]
+                }
+                return CanvasItem(image: NSImage())[keyPath: keyPath]
+            },
+            set: { newValue in
+                viewModel.updateSelectedItem { $0[keyPath: keyPath] = newValue }
+            }
+        )
+    }
+
+    // MARK: - Layers Section
+    @ViewBuilder
+    private var layersSectionContent: some View {
+        Section("layers") {
+            ForEach(viewModel.canvasItems.sorted(by: { $0.zIndex > $1.zIndex })) { item in
+                HStack(spacing: 8) {
+                    Image(nsImage: item.image)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 32, height: 24)
+                        .clipShape(RoundedRectangle(cornerRadius: 3))
+
+                    Text("Layer \((viewModel.canvasItems.firstIndex(where: { $0.id == item.id }) ?? 0) + 1)")
+                        .font(.system(size: 11))
+
+                    Spacer()
+
+                    if viewModel.selectedItemID == item.id {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.accentColor)
+                            .font(.system(size: 12))
+                    }
+                }
+                .padding(.vertical, 2)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    viewModel.selectedItemID = item.id
+                }
+            }
+
+            HStack(spacing: 8) {
+                Button(action: viewModel.addImageFromFile) {
+                    Label("Add Image", systemImage: "plus.circle.fill")
+                        .font(.system(size: 11))
+                }
+                .buttonStyle(.bordered)
+
+                if viewModel.canvasItems.count > 1 {
+                    Spacer()
+
+                    Button {
+                        viewModel.removeSelectedItem()
+                    } label: {
+                        Image(systemName: "trash")
+                            .font(.system(size: 11))
+                    }
+                    .buttonStyle(.bordered)
+                    .help("Remove selected layer")
+                }
+            }
+
+            if viewModel.canvasItems.count > 1 {
+                HStack(spacing: 4) {
+                    Button { viewModel.bringSelectedToFront() } label: {
+                        Label("Front", systemImage: "square.3.layers.3d.top.filled")
+                            .font(.system(size: 10))
+                    }
+                    .buttonStyle(.bordered)
+
+                    Button { viewModel.sendSelectedToBack() } label: {
+                        Label("Back", systemImage: "square.3.layers.3d.bottom.filled")
+                            .font(.system(size: 10))
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+        }
+    }
+
     // MARK: - Appearance Section
     @ViewBuilder
     private var appearanceSectionContent: some View {
+        layersSectionContent
+
         Section("mockup") {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 80), spacing: 8)], spacing: 8) {
                 ForEach(MockupStyle.allCases) { style in
                     mockupStyleButton(style)
                 }
             }
-            
-            if viewModel.config.showMockup && viewModel.config.mockupStyle != .defaultStyle {
+
+            if let item = viewModel.selectedItem, item.showMockup && item.mockupStyle != .defaultStyle {
                 LabeledContent("size") {
                     OptimizedSlider(
-                        value: $viewModel.config.mockupBorderSize,
+                        value: selectedItemBinding(\.mockupBorderSize),
                         range: 0...10,
                         defaultValue: 3,
                         step: 0.5,
@@ -220,97 +315,109 @@ struct ScreenshotEditorView: View {
                         decimals: 1
                     )
                 }
-                
-                if viewModel.config.mockupStyle == .border {
-                    ColorPicker("color", selection: $viewModel.config.borderColor, supportsOpacity: false)
+
+                if item.mockupStyle == .border {
+                    ColorPicker("color", selection: selectedItemBinding(\.borderColor), supportsOpacity: false)
                 }
             }
         }
-        
+
         Section("corners") {
-            Picker("Style", selection: $viewModel.config.borderStyle) {
+            Picker("Style", selection: selectedItemBinding(\.borderStyle)) {
                 ForEach(BorderStyle.allCases) { style in
                     Text(style.displayName).tag(style)
                 }
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .onChange(of: viewModel.config.borderStyle) { _, newValue in
-                viewModel.config.borderRadius = newValue.cornerRadius
+            .onChange(of: viewModel.selectedItem?.borderStyle) { _, newValue in
+                if let newValue {
+                    viewModel.updateSelectedItem { $0.borderRadius = newValue.cornerRadius }
+                }
             }
-            
+
             LabeledContent("radius") {
                 OptimizedSlider(
-                    value: $viewModel.config.borderRadius,
+                    value: selectedItemBinding(\.borderRadius),
                     range: 0...40,
                     defaultValue: 20,
                     showValue: true
                 )
             }
         }
-        
+
         Section("transform") {
+            LabeledContent("image scale") {
+                OptimizedSlider(
+                    value: selectedItemBinding(\.imageScale),
+                    range: 10...200,
+                    defaultValue: 100,
+                    showValue: true,
+                    unit: "%"
+                )
+            }
+
             LabeledContent("scale") {
                 OptimizedSlider(
-                    value: $viewModel.config.scale,
+                    value: selectedItemBinding(\.scale),
                     range: 0.1...3.0,
                     defaultValue: 1.0,
                     showValue: true,
                     decimals: 2
                 )
             }
-            
+
             LabeledContent("rotation") {
                 HStack(spacing: 4) {
                     Button {
-                        viewModel.config.rotation -= 90
+                        viewModel.updateSelectedItem { $0.rotation -= 90 }
                     } label: {
                         Image(systemName: "rotate.left")
                     }
                     .buttonStyle(.bordered)
-                    
-                    Text("\(Int(viewModel.config.rotation))°")
+
+                    Text("\(Int(viewModel.selectedItem?.rotation ?? 0))°")
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(.tertiary)
                         .frame(width: 36)
-                    
+
                     Button {
-                        viewModel.config.rotation += 90
+                        viewModel.updateSelectedItem { $0.rotation += 90 }
                     } label: {
                         Image(systemName: "rotate.right")
                     }
                     .buttonStyle(.bordered)
                 }
             }
-            
-            if viewModel.config.mockupStyle != .glassEffect {
+
+            if viewModel.selectedItem?.mockupStyle != .glassEffect {
                 LabeledContent("rotationX") {
                     HStack(spacing: 4) {
                         OptimizedSlider(
-                            value: $viewModel.config.rotationX,
+                            value: selectedItemBinding(\.rotationX),
                             range: -90...90,
                             defaultValue: 0,
                             showValue: true,
                             unit: "°"
                         )
-                        Button { viewModel.config.rotationX = 0 } label: {
+                        Button { viewModel.updateSelectedItem { $0.rotationX = 0 } } label: {
                             Image(systemName: "arrow.counterclockwise").font(.system(size: 11))
                         }
                         .buttonStyle(.bordered)
                         .help("Reset")
                     }
                 }
-                
+
                 LabeledContent("rotationY") {
                     HStack(spacing: 4) {
                         OptimizedSlider(
-                            value: $viewModel.config.rotationY,
+                            value: selectedItemBinding(\.rotationY),
                             range: -90...90,
                             defaultValue: 0,
                             showValue: true,
                             unit: "°"
                         )
-                        Button { viewModel.config.rotationY = 0 } label: {
+                        Button { viewModel.updateSelectedItem { $0.rotationY = 0 } } label: {
                             Image(systemName: "arrow.counterclockwise").font(.system(size: 11))
                         }
                         .buttonStyle(.bordered)
@@ -331,7 +438,18 @@ struct ScreenshotEditorView: View {
                 }
             }
             .padding(3)
-            .background(Color.gray.opacity(0.2), in: RoundedRectangle(cornerRadius: 10))
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(
+                        LinearGradient(
+                            colors: [Color.white.opacity(0.2), Color.white.opacity(0.05)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 0.5
+                    )
+            )
             
             backgroundContent
         }
@@ -383,18 +501,6 @@ struct ScreenshotEditorView: View {
     // MARK: - Layout Section
     @ViewBuilder
     private var layoutSectionContent: some View {
-        Section("layout") {
-            LabeledContent("scale") {
-                OptimizedSlider(
-                    value: $viewModel.config.imageScale,
-                    range: 10...200,
-                    defaultValue: 100,
-                    showValue: true,
-                    unit: "%"
-                )
-            }
-        }
-        
         if viewModel.config.selectedSocialPreset != nil {
             Section("export.size") {
                 if let preset = viewModel.config.selectedSocialPreset {
@@ -653,15 +759,21 @@ struct ScreenshotEditorView: View {
         GeometryReader { geo in
             ZStack {
                 Color.clear.glassEffect(.regular, in: .rect)
-                
+
                 ScreenshotPreviewCanvas(
-                    image: viewModel.originalImage,
+                    items: viewModel.canvasItems,
                     config: viewModel.config,
-                    isDragging: $isDraggingScreenshot
-                ) { newOffset in
-                    viewModel.config.screenshotOffset = newOffset
-                }
-                // No .id() here - avoids recreating the view and white flash
+                    selectedItemID: viewModel.selectedItemID,
+                    isDragging: $isDraggingScreenshot,
+                    onItemOffsetChanged: { id, newOffset in
+                        if let index = viewModel.canvasItems.firstIndex(where: { $0.id == id }) {
+                            viewModel.canvasItems[index].offset = newOffset
+                        }
+                    },
+                    onItemSelected: { id in
+                        viewModel.selectedItemID = id
+                    }
+                )
                 .scaleEffect(viewModel.config.zoom / 100)
                 .animation(.easeOut(duration: 0.15), value: viewModel.config.zoom)
                 .position(
@@ -674,21 +786,18 @@ struct ScreenshotEditorView: View {
             .simultaneousGesture(magnifyGesture)
             .onAppear {
                 viewModel.canvasSize = geo.size
-                // Defer calculation to avoid layout cycle
                 DispatchQueue.main.async {
                     viewModel.calculateFitZoom()
                 }
             }
             .onChange(of: geo.size) { _, new in
-                // Avoid repeated calls if size hasn't really changed
                 guard abs(viewModel.canvasSize.width - new.width) > 1 ||
                       abs(viewModel.canvasSize.height - new.height) > 1 else { return }
-                
+
                 let oldOffset = viewModel.offset
                 let oldLastOffset = viewModel.lastOffset
                 viewModel.canvasSize = new
-                
-                // Defer to avoid recursive layout cycle
+
                 DispatchQueue.main.async {
                     viewModel.calculateFitZoom()
                     viewModel.offset = oldOffset
@@ -697,17 +806,24 @@ struct ScreenshotEditorView: View {
             }
         }
         .ignoresSafeArea()
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("ScreenshotEditorAddImage"))) { notification in
+            if let image = notification.object as? NSImage {
+                viewModel.addImage(image)
+            }
+        }
     }
     
     // MARK: - Component Builders
     
     private func mockupStyleButton(_ style: MockupStyle) -> some View {
-        let isSelected = viewModel.config.mockupStyle == style
+        let isSelected = viewModel.selectedItem?.mockupStyle == style
         return Button {
-            viewModel.config.mockupStyle = style
-            if style == .glassEffect {
-                viewModel.config.rotationX = 0
-                viewModel.config.rotationY = 0
+            viewModel.updateSelectedItem { item in
+                item.mockupStyle = style
+                if style == .glassEffect {
+                    item.rotationX = 0
+                    item.rotationY = 0
+                }
             }
         } label: {
             VStack(spacing: 4) {
@@ -742,7 +858,9 @@ struct ScreenshotEditorView: View {
     private func backgroundTypeButton(_ type: BackgroundType) -> some View {
         let isSelected = viewModel.config.backgroundType == type
         return Button {
-            viewModel.config.backgroundType = type
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                viewModel.config.backgroundType = type
+            }
         } label: {
             Image(systemName: type.icon)
                 .font(.system(size: 13, weight: .medium))
@@ -752,7 +870,14 @@ struct ScreenshotEditorView: View {
                 .contentShape(Rectangle())
                 .background {
                     if isSelected {
-                        RoundedRectangle(cornerRadius: 7).fill(Color.accentColor)
+                        RoundedRectangle(cornerRadius: 7)
+                            .fill(Color.white.opacity(0.15))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 7)
+                                    .stroke(Color.white.opacity(0.25), lineWidth: 0.5)
+                            )
+                            .shadow(color: .black.opacity(0.15), radius: 4, x: 0, y: 2)
+                            .matchedGeometryEffect(id: "backgroundTypeSelector", in: backgroundTypeAnimation)
                     }
                 }
         }

@@ -38,11 +38,17 @@ class ScreenshotEditorWindow: NSObject, NSWindowDelegate {
     /// Shows the editor window with the specified image.
     /// - Parameter image: The screenshot image to edit.
     func show(with image: NSImage) {
-        // Close any existing window first
+        // If editor is already open, add image to canvas instead of replacing
         if editorWindow != nil {
-            closeImmediately()
+            NotificationCenter.default.post(
+                name: Notification.Name("ScreenshotEditorAddImage"),
+                object: image
+            )
+            editorWindow?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
         }
-        
+
         isClosing = false
         createWindow(with: image)
     }

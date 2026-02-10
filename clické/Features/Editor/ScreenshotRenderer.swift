@@ -7,7 +7,7 @@ import CoreImage.CIFilterBuiltins
 
 /// Optimized renderer for exporting screenshots with noise via CIKernel.
 final class ScreenshotRenderer {
-    let image: NSImage
+    let items: [CanvasItem]
     let config: ScreenshotStyleConfig
     
     // Core Image context (reused for performance)
@@ -70,8 +70,13 @@ final class ScreenshotRenderer {
         }
     }
     
-    init(image: NSImage, config: ScreenshotStyleConfig) {
-        self.image = image
+    /// Reference image used for canvas sizing (largest item)
+    private var referenceImage: NSImage {
+        items.max(by: { $0.image.size.width * $0.image.size.height < $1.image.size.width * $1.image.size.height })?.image ?? NSImage()
+    }
+
+    init(items: [CanvasItem], config: ScreenshotStyleConfig) {
+        self.items = items
         self.config = config
     }
     
@@ -130,8 +135,9 @@ final class ScreenshotRenderer {
     // MARK: - Render Canvas Helper
     private func renderCanvas(config: ScreenshotStyleConfig, size: CGSize, preloadedBackground: NSImage?) -> NSImage? {
         let view = ScreenshotPreviewCanvas(
-            image: image,
+            items: items,
             config: config,
+            selectedItemID: nil,
             isDragging: .constant(false),
             isRendering: true,
             preloadedBackgroundImage: preloadedBackground
@@ -229,8 +235,8 @@ final class ScreenshotRenderer {
     
     private func calculateOutputSize() -> CGSize {
         let mockupPadding = mockupExtraPadding()
-        let baseWidth = image.size.width + config.padding * 2 + mockupPadding.width
-        let baseHeight = image.size.height + config.padding * 2 + mockupPadding.height
+        let baseWidth = referenceImage.size.width + config.padding * 2 + mockupPadding.width
+        let baseHeight = referenceImage.size.height + config.padding * 2 + mockupPadding.height
         
         // If a social preset is selected, use its dimensions
         if let preset = config.selectedSocialPreset {
@@ -258,13 +264,14 @@ final class ScreenshotRenderer {
     }
     
     private func mockupExtraPadding() -> CGSize {
-        guard config.showMockup else { return .zero }
-        
-        switch config.mockupStyle {
+        // Use the first item's mockup settings for canvas sizing
+        guard let firstItem = items.first, firstItem.showMockup else { return .zero }
+
+        switch firstItem.mockupStyle {
         case .defaultStyle:
             return .zero
         case .glassEffect, .border:
-            let size = config.mockupBorderSize * 3 * 2
+            let size = firstItem.mockupBorderSize * 3 * 2
             return CGSize(width: size, height: size)
         }
     }

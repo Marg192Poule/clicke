@@ -462,7 +462,7 @@ struct ScreenshotStyleConfig: Equatable {
     static func == (lhs: ScreenshotStyleConfig, rhs: ScreenshotStyleConfig) -> Bool {
         // Quick check with render hash first
         guard lhs.renderHash == rhs.renderHash else { return false }
-        
+
         // Full comparison for remaining properties
         return lhs.mockupStyle == rhs.mockupStyle &&
                lhs.showMockup == rhs.showMockup &&
@@ -480,5 +480,64 @@ struct ScreenshotStyleConfig: Equatable {
                lhs.zoom == rhs.zoom &&
                lhs.screenshotOffset == rhs.screenshotOffset &&
                lhs.selectedSocialPreset?.id == rhs.selectedSocialPreset?.id
+    }
+}
+
+// MARK: - Canvas Item
+
+/// Represents a single image placed on the canvas with its own transforms.
+struct CanvasItem: Identifiable, Equatable {
+    let id: UUID
+    var image: NSImage
+
+    // Per-item transforms
+    var offset: CGSize = .zero
+    var scale: CGFloat = 1.0
+    var imageScale: CGFloat = 100
+    var rotation: Double = 0
+    var rotationX: Double = 0
+    var rotationY: Double = 0
+
+    // Per-item appearance
+    var borderRadius: CGFloat = 20
+    var borderStyle: BorderStyle = .curved
+    var mockupStyle: MockupStyle = .defaultStyle
+    var showMockup: Bool = true
+    var mockupBorderSize: CGFloat = 3
+    var borderColor: Color = Color(hex: "2d2d2d")
+
+    // Layer ordering
+    var zIndex: Double = 0
+
+    init(image: NSImage, id: UUID = UUID()) {
+        self.id = id
+        self.image = image
+    }
+
+    var transformHash: Int {
+        var hasher = Hasher()
+        hasher.combine(rotation)
+        hasher.combine(rotationX)
+        hasher.combine(rotationY)
+        hasher.combine(scale)
+        hasher.combine(imageScale)
+        hasher.combine(borderRadius)
+        return hasher.finalize()
+    }
+
+    static func == (lhs: CanvasItem, rhs: CanvasItem) -> Bool {
+        lhs.id == rhs.id &&
+        lhs.offset == rhs.offset &&
+        lhs.scale == rhs.scale &&
+        lhs.imageScale == rhs.imageScale &&
+        lhs.rotation == rhs.rotation &&
+        lhs.rotationX == rhs.rotationX &&
+        lhs.rotationY == rhs.rotationY &&
+        lhs.borderRadius == rhs.borderRadius &&
+        lhs.borderStyle == rhs.borderStyle &&
+        lhs.mockupStyle == rhs.mockupStyle &&
+        lhs.showMockup == rhs.showMockup &&
+        lhs.mockupBorderSize == rhs.mockupBorderSize &&
+        lhs.zIndex == rhs.zIndex
     }
 }

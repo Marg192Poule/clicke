@@ -83,25 +83,32 @@ class ToastManager {
     func showWithEditOption(message: String, icon: String, screenshotImage: NSImage) {
         popupWindow?.close()
         dismissWorkItem?.cancel()
-        
+
         let screen = NSScreen.main ?? NSScreen.screens[0]
+
+        // Compact toast dimensions - only covers the toast area, not the full screen
+        let toastWidth: CGFloat = 280
+        let toastHeight: CGFloat = 52
+        let toastX = screen.frame.midX - toastWidth / 2
+        let toastY = screen.frame.maxY - toastHeight - 50
+        let toastRect = NSRect(x: toastX, y: toastY, width: toastWidth, height: toastHeight)
+
         let window = NSPanel(
-            contentRect: screen.frame,
+            contentRect: toastRect,
             styleMask: [.fullSizeContentView, .borderless, .utilityWindow, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
-        
+
         window.level = .screenSaver
         window.backgroundColor = .clear
         window.isOpaque = false
         window.hasShadow = false
-        window.ignoresMouseEvents = false // Allow interaction
+        window.ignoresMouseEvents = false
         window.collectionBehavior = [.fullScreenAuxiliary, .canJoinAllSpaces, .stationary, .ignoresCycle]
-        
+
         let capturedImage = screenshotImage
-        
-        // Create interactive toast
+
         let toastView = InteractiveToastView(
             message: message,
             icon: icon,
@@ -110,34 +117,20 @@ class ToastManager {
                 ScreenshotEditorWindow.shared.show(with: capturedImage)
             }
         )
-        
-        // Wrap in a container that allows click through except on the toast
-        let containerView = ZStack {
-            Color.clear
-                .contentShape(Rectangle())
-                .allowsHitTesting(false)
-            
-            VStack {
-                toastView
-                    .padding(.top, 50)
-                Spacer()
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        
-        window.contentView = NSHostingView(rootView: containerView)
-        
+
+        window.contentView = NSHostingView(rootView: toastView)
+
         // Fade in animation
         window.alphaValue = 0
         window.orderFront(nil)
         popupWindow = window
-        
+
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.2
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             window.animator().alphaValue = 1
         }
-        
+
         // Auto-dismiss after 3 seconds
         let workItem = DispatchWorkItem { [weak self] in
             self?.dismiss()
