@@ -9,8 +9,8 @@ nonisolated private let logger = Logger(subsystem: Bundle.main.bundleIdentifier 
 ///
 /// Everything lives in a per-app folder inside the user's temporary directory (`$TMPDIR`,
 /// readable only by the user). Capture files are deleted as soon as they're decoded; drag files
-/// must outlive the drop (the receiving app may read them later), so they're removed after an hour
-/// and the whole folder is wiped at launch.
+/// must outlive the drop (the receiving app may read them later), so they're removed after an hour,
+/// and the whole folder is wiped when Clické quits and again at launch (after a crash).
 enum CaptureTemporaryStorage {
     private static let dragFileLifetime: TimeInterval = 60 * 60
 
@@ -21,6 +21,11 @@ enum CaptureTemporaryStorage {
 
     private static var capturesURL: URL { rootURL.appendingPathComponent("Captures", isDirectory: true) }
     private static var dragURL: URL { rootURL.appendingPathComponent("Drag", isDirectory: true) }
+
+    /// Where an earlier editor build wrote its drag-out files.
+    private static var legacyDragExportsURL: URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent("Clické Drag Exports", isDirectory: true)
+    }
 
     /// A new, unique path for `screencapture` to write to.
     static func makeCaptureFileURL() throws -> URL {
@@ -34,23 +39,36 @@ enum CaptureTemporaryStorage {
         removeStaleDragFiles()
         let folder = dragURL.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try createPrivateDirectory(at: folder)
-        let url = folder.appendingPathComponent(fileName, isDirectory: false)
+        let url = folder.appendingPathComponent(safeFileName(fileName), isDirectory: false)
         try data.write(to: url, options: .atomic)
         return url
     }
 
-    /// Removes every temporary file (called at launch to clean up after a previous session).
+    /// Removes every temporary file, including the folder used by earlier versions
+    /// (called when Clické quits, and at launch to clean up after a crash).
     static func removeAll() {
         let fileManager = FileManager.default
-        guard fileManager.fileExists(atPath: rootURL.path) else { return }
-        do {
-            try fileManager.removeItem(at: rootURL)
-        } catch {
-            logger.error("Couldn't remove temporary files: \(error.localizedDescription, privacy: .private)")
+        for folder in [rootURL, legacyDragExportsURL] where fileManager.fileExists(atPath: folder.path) {
+            do {
+                try fileManager.removeItem(at: folder)
+            } catch {
+                logger.error("Couldn't remove temporary files: \(error.localizedDescription, privacy: .private)")
+            }
         }
     }
 
     // MARK: Private
+
+    /// A single path component: a name containing "/" or ".." can't write outside its folder.
+    private static func safeFileName(_ fileName: String) -> String {
+        let name = fileName
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return "Screenshot.png" }
+        // Never "." or "..", nor a hidden file.
+        return name.hasPrefix(".") ? "Screenshot" + name : name
+    }
 
     private static func removeStaleDragFiles() {
         let fileManager = FileManager.default
