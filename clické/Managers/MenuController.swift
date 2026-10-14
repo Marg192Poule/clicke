@@ -124,8 +124,8 @@ final class MenuController: NSObject, NSMenuDelegate, NSMenuItemValidation {
     /// Standard responder-chain actions: the editor implements them, and text fields get ⌘C/⌘V/⌘Z.
     private func makeEditMenu() -> NSMenu {
         let menu = NSMenu(title: String(localized: "menu.edit", defaultValue: "Edit", comment: "Title of the Edit menu in the menu bar"))
-        menu.addItem(makeItem(String(localized: "Undo"), action: Selector(("undo:")), key: "z", target: .firstResponder))
-        menu.addItem(makeItem(String(localized: "Redo"), action: Selector(("redo:")), key: "z", modifiers: [.command, .shift], target: .firstResponder))
+        menu.addItem(makeItem(String(localized: "Undo"), action: #selector(EditorWindow.undo(_:)), key: "z", target: .firstResponder))
+        menu.addItem(makeItem(String(localized: "Redo"), action: #selector(EditorWindow.redo(_:)), key: "z", modifiers: [.command, .shift], target: .firstResponder))
         menu.addItem(.separator())
         menu.addItem(makeItem(String(localized: "Cut"), action: #selector(NSText.cut(_:)), key: "x", target: .firstResponder))
         menu.addItem(makeItem(String(localized: "Copy"), action: #selector(NSText.copy(_:)), key: "c", target: .firstResponder))
@@ -140,15 +140,15 @@ final class MenuController: NSObject, NSMenuDelegate, NSMenuItemValidation {
     private func makeViewMenu() -> NSMenu {
         let menu = NSMenu(title: String(localized: "View"))
         let zoomInTitle = String(localized: "Zoom In")
-        menu.addItem(makeItem(zoomInTitle, action: Selector(("zoomIn:")), key: "+", target: .firstResponder))
+        menu.addItem(makeItem(zoomInTitle, action: #selector(EditorWindow.zoomIn(_:)), key: "+", target: .firstResponder))
         // ⌘= also zooms in (no Shift needed on most layouts), without a second visible item.
-        let zoomInAlternate = makeItem(zoomInTitle, action: Selector(("zoomIn:")), key: "=", target: .firstResponder)
+        let zoomInAlternate = makeItem(zoomInTitle, action: #selector(EditorWindow.zoomIn(_:)), key: "=", target: .firstResponder)
         zoomInAlternate.isHidden = true
         zoomInAlternate.allowsKeyEquivalentWhenHidden = true
         menu.addItem(zoomInAlternate)
-        menu.addItem(makeItem(String(localized: "Zoom Out"), action: Selector(("zoomOut:")), key: "-", target: .firstResponder))
-        menu.addItem(makeItem(String(localized: "Actual Size"), action: Selector(("zoomToActualSize:")), key: "0", target: .firstResponder))
-        menu.addItem(makeItem(String(localized: "Zoom to Fit"), action: Selector(("zoomToFit:")), key: "9", target: .firstResponder))
+        menu.addItem(makeItem(String(localized: "Zoom Out"), action: #selector(EditorWindow.zoomOut(_:)), key: "-", target: .firstResponder))
+        menu.addItem(makeItem(String(localized: "Actual Size"), action: #selector(EditorWindow.zoomToActualSize(_:)), key: "0", target: .firstResponder))
+        menu.addItem(makeItem(String(localized: "Zoom to Fit"), action: #selector(EditorWindow.zoomToFit(_:)), key: "9", target: .firstResponder))
         menu.addItem(.separator())
         menu.addItem(makeItem(String(localized: "Show Inspector"), action: #selector(NSSplitViewController.toggleInspector(_:)), key: "i", modifiers: [.command, .option], target: .firstResponder))
         menu.addItem(.separator())
