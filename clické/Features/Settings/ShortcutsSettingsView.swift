@@ -1,25 +1,11 @@
 import SwiftUI
 import AppKit
 
-// MARK: - Shortcut Actions
+// MARK: - Capture Mode Shortcuts
 
-/// The captures that can be triggered by a global shortcut.
-enum ShortcutAction: CaseIterable, Identifiable {
-    case area
-    case window
-    case fullScreen
-
-    var id: Self { self }
-
-    var title: String {
-        switch self {
-        case .area: String(localized: "Capture Area")
-        case .window: String(localized: "Capture Window")
-        case .fullScreen: String(localized: "Capture Full Screen")
-        }
-    }
-
-    var keyPath: WritableKeyPath<AppSettings, HotkeyConfiguration?> {
+private extension CaptureMode {
+    /// Where this mode's shortcut is stored.
+    var hotkeyKeyPath: WritableKeyPath<AppSettings, HotkeyConfiguration?> {
         switch self {
         case .area: \.areaHotkey
         case .window: \.windowHotkey
@@ -27,7 +13,7 @@ enum ShortcutAction: CaseIterable, Identifiable {
         }
     }
 
-    var defaultShortcut: HotkeyConfiguration {
+    var defaultHotkey: HotkeyConfiguration {
         switch self {
         case .area: AppSettings.defaultAreaHotkey
         case .window: AppSettings.defaultWindowHotkey
@@ -38,38 +24,43 @@ enum ShortcutAction: CaseIterable, Identifiable {
 
 // MARK: - Shortcut Issues
 
-/// Why a recorded shortcut wasn't saved.
+/// Why a shortcut wasn't saved, or why a saved shortcut doesn't work.
 enum ShortcutIssue: Equatable {
     /// Not usable as a global shortcut (needs ⌘, ⌥ or ⌃, unless it's a function key).
     case invalid(HotkeyConfiguration)
     /// Already assigned to another capture.
-    case conflict(HotkeyConfiguration, with: ShortcutAction)
-    /// Used by macOS or apps; can be saved anyway after confirmation.
+    case conflict(HotkeyConfiguration, with: CaptureMode)
+    /// Used by macOS or apps. Only macOS screenshot shortcuts can be saved anyway.
     case reserved(HotkeyConfiguration, ReservedShortcutUsage)
+    /// Saved, but not active: another app already uses it (see `HotkeyAvailability`).
+    case unavailable(HotkeyConfiguration)
 }
 
 // MARK: - Shortcuts Settings
 
 /// Shortcuts tab: one recorder per capture type, inline validation and "Restore Defaults".
+///
+/// Each row shows, in order of priority, why its last recording was refused, or what's wrong with
+/// its saved shortcut (invalid or duplicated, e.g. from older settings, or not active).
 struct ShortcutsSettingsView: View {
     @Bindable var model: SettingsModel
 
-    /// Inline message per row, cleared when that row records again.
-    @State private var issues: [ShortcutAction: ShortcutIssue] = [:]
+    /// Why the last recording of a row wasn't saved, cleared when that row records again.
+    @State private var recordingIssues: [CaptureMode: ShortcutIssue] = [:]
 
     var body: some View {
         Form {
             Section {
-                ForEach(ShortcutAction.allCases) { action in
+                ForEach(CaptureMode.allCases, id: \.self) { mode in
                     ShortcutRow(
-                        action: action,
-                        shortcut: model.settings[keyPath: action.keyPath],
-                        issue: issues[action],
-                        onRecordingStarted: { issues[action] = nil },
-                        onRecord: { record($0, for: action) },
-                        onClear: { save(nil, for: action) },
-                        onReject: { issues[action] = .invalid($0) },
-                        onUseAnyway: { useAnyway(for: action) }
+                        title: mode.title,
+                        shortcut: model.settings[keyPath: mode.hotkeyKeyPath],
+                        issue: recordingIssues[mode] ?? savedShortcutIssue(for: mode),
+                        onRecordingStarted: { recordingIssues[mode] = nil },
+                        onRecord: { record($0, for: mode) },
+                        onClear: { save(nil, for: mode) },
+                        onReject: { recordingIssues[mode] = .invalid($0) },
+                        onUseAnyway: { useAnyway(for: mode) }
                     )
                 }
             } footer: {
@@ -78,7 +69,7 @@ struct ShortcutsSettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                     Button("Restore Defaults", action: restoreDefaults)
-                        .disabled(usesDefaultShortcuts && issues.isEmpty)
+                        .disabled(usesDefaultShortcuts && recordingIssues.isEmpty)
                 }
             }
         }
@@ -87,64 +78,86 @@ struct ShortcutsSettingsView: View {
     }
 
     private var usesDefaultShortcuts: Bool {
-        ShortcutAction.allCases.allSatisfy { model.settings[keyPath: $0.keyPath] == $0.defaultShortcut }
+        CaptureMode.allCases.allSatisfy { model.settings[keyPath: $0.hotkeyKeyPath] == $0.defaultHotkey }
+    }
+
+    /// What's wrong with the shortcut saved for `mode`, if anything.
+    private func savedShortcutIssue(for mode: CaptureMode) -> ShortcutIssue? {
+        guard let shortcut = model.settings[keyPath: mode.hotkeyKeyPath] else { return nil }
+
+        // Settings from older versions may contain shortcuts that can't be registered (e.g. ⇧ only).
+        if !shortcut.isValidGlobalShortcut {
+            return .invalid(shortcut)
+        }
+        // A duplicated shortcut works for the first capture only (it's registered first).
+        let earlierModes = CaptureMode.allCases.prefix { $0 != mode }
+        if let other = earlierModes.first(where: { model.settings[keyPath: $0.hotkeyKeyPath] == shortcut }) {
+            return .conflict(shortcut, with: other)
+        }
+        if model.unavailableHotkeys.contains(shortcut) {
+            return .unavailable(shortcut)
+        }
+        return nil
     }
 
     // MARK: Actions
 
-    private func record(_ shortcut: HotkeyConfiguration, for action: ShortcutAction) {
+    private func record(_ shortcut: HotkeyConfiguration, for mode: CaptureMode) {
         // Typing the current shortcut again is a no-op.
-        if model.settings[keyPath: action.keyPath] == shortcut {
-            issues[action] = nil
+        if model.settings[keyPath: mode.hotkeyKeyPath] == shortcut {
+            recordingIssues[mode] = nil
             return
         }
-        if let other = conflictingAction(for: shortcut, excluding: action) {
+        if let other = conflictingMode(for: shortcut, excluding: mode) {
             NSSound.beep()
-            issues[action] = .conflict(shortcut, with: other)
+            recordingIssues[mode] = .conflict(shortcut, with: other)
             return
         }
         if let usage = shortcut.reservedUsage {
-            issues[action] = .reserved(shortcut, usage)
+            if !usage.canBeUsedAnyway {
+                NSSound.beep()
+            }
+            recordingIssues[mode] = .reserved(shortcut, usage)
             return
         }
-        save(shortcut, for: action)
+        save(shortcut, for: mode)
     }
 
-    private func useAnyway(for action: ShortcutAction) {
-        guard case .reserved(let shortcut, _) = issues[action] else { return }
-        if let other = conflictingAction(for: shortcut, excluding: action) {
-            issues[action] = .conflict(shortcut, with: other)
+    private func useAnyway(for mode: CaptureMode) {
+        guard case .reserved(let shortcut, let usage) = recordingIssues[mode], usage.canBeUsedAnyway else { return }
+        if let other = conflictingMode(for: shortcut, excluding: mode) {
+            recordingIssues[mode] = .conflict(shortcut, with: other)
             return
         }
-        save(shortcut, for: action)
+        save(shortcut, for: mode)
     }
 
-    private func save(_ shortcut: HotkeyConfiguration?, for action: ShortcutAction) {
-        issues[action] = nil
-        model.settings[keyPath: action.keyPath] = shortcut
+    private func save(_ shortcut: HotkeyConfiguration?, for mode: CaptureMode) {
+        recordingIssues[mode] = nil
+        model.settings[keyPath: mode.hotkeyKeyPath] = shortcut
     }
 
     private func restoreDefaults() {
         var settings = model.settings
-        for action in ShortcutAction.allCases {
-            settings[keyPath: action.keyPath] = action.defaultShortcut
+        for mode in CaptureMode.allCases {
+            settings[keyPath: mode.hotkeyKeyPath] = mode.defaultHotkey
         }
         model.settings = settings
-        issues = [:]
+        recordingIssues = [:]
     }
 
-    private func conflictingAction(for shortcut: HotkeyConfiguration, excluding action: ShortcutAction) -> ShortcutAction? {
-        ShortcutAction.allCases.first { other in
-            other != action && model.settings[keyPath: other.keyPath] == shortcut
+    private func conflictingMode(for shortcut: HotkeyConfiguration, excluding mode: CaptureMode) -> CaptureMode? {
+        CaptureMode.allCases.first { other in
+            other != mode && model.settings[keyPath: other.hotkeyKeyPath] == shortcut
         }
     }
 }
 
 // MARK: - Shortcut Row
 
-/// "Capture Area   [⌥⇧4 ⓧ]", with an inline message under it when the last recording was refused.
+/// "Capture Area   [⌥⇧4 ⓧ]", with an inline message under it when there's an issue.
 private struct ShortcutRow: View {
-    let action: ShortcutAction
+    let title: String
     let shortcut: HotkeyConfiguration?
     let issue: ShortcutIssue?
     let onRecordingStarted: () -> Void
@@ -156,11 +169,11 @@ private struct ShortcutRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text(action.title)
+                Text(title)
                 Spacer()
                 ShortcutRecorder(
                     shortcut: shortcut,
-                    title: action.title,
+                    title: title,
                     onRecordingStarted: onRecordingStarted,
                     onRecord: onRecord,
                     onClear: onClear,
@@ -195,7 +208,7 @@ private struct ShortcutIssueMessage: View {
 
             Spacer(minLength: 8)
 
-            if case .reserved = issue {
+            if case .reserved(_, let usage) = issue, usage.canBeUsedAnyway {
                 Button("Use Anyway", action: onUseAnyway)
                     .controlSize(.small)
             }
@@ -205,22 +218,26 @@ private struct ShortcutIssueMessage: View {
     private var symbolName: String {
         switch issue {
         case .invalid: "xmark.octagon.fill"
-        case .conflict, .reserved: "exclamationmark.triangle.fill"
+        case .conflict, .reserved, .unavailable: "exclamationmark.triangle.fill"
         }
     }
 
     private var message: Text {
         switch issue {
         case .invalid(let shortcut):
-            return Text("\(shortcut.displayString) can’t be used. Include ⌘, ⌥ or ⌃, or use a function key.")
+            Text("\(shortcut.displayString) can’t be used. Include ⌘, ⌥ or ⌃, or use a function key.")
         case .conflict(let shortcut, let other):
-            return Text("\(shortcut.displayString) is already used for “\(other.title)”.")
+            Text("\(shortcut.displayString) is already used for “\(other.title)”.")
+        case .unavailable(let shortcut):
+            Text("\(shortcut.displayString) is used by another app. Choose a different shortcut.")
+        case .reserved(let shortcut, .screenshot(let purpose)):
+            Text("macOS uses \(shortcut.displayString) to \(purpose).")
         case .reserved(let shortcut, .known(let purpose)):
-            return Text("macOS uses \(shortcut.displayString) to \(purpose).")
+            Text("macOS uses \(shortcut.displayString) to \(purpose). Choose a different shortcut.")
         case .reserved(let shortcut, .system):
-            return Text("\(shortcut.displayString) is used by macOS. You can turn it off in System Settings › Keyboard › Keyboard Shortcuts.")
+            Text("\(shortcut.displayString) is used by macOS. Choose a different shortcut, or turn it off in System Settings > Keyboard > Keyboard Shortcuts.")
         case .reserved(let shortcut, .appCommand):
-            return Text("Apps use \(shortcut.displayString) for menu commands. Using it here would override it in every app.")
+            Text("Apps use \(shortcut.displayString) for menu commands. Choose a different shortcut.")
         }
     }
 }

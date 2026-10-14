@@ -47,7 +47,7 @@ struct ShortcutRecorder: NSViewRepresentable {
 // MARK: - Shortcut Recorder Control (AppKit)
 
 /// A compact, native-looking field that records a global keyboard shortcut, like the recorders in
-/// System Settings › Keyboard › Keyboard Shortcuts.
+/// System Settings > Keyboard > Keyboard Shortcuts.
 ///
 /// - Click it (or press Space when it has keyboard focus) to start recording.
 /// - While recording: type a combination to record it, Esc cancels, ⌫ / ⌦ clears the shortcut.
@@ -142,8 +142,8 @@ final class ShortcutRecorderControl: NSView {
         clearButton.target = self
         clearButton.action = #selector(clearButtonClicked)
         clearButton.refusesFirstResponder = true
-        clearButton.toolTip = String(localized: "Clear Shortcut")
-        clearButton.setAccessibilityLabel(String(localized: "Clear Shortcut"))
+        clearButton.toolTip = String(localized: "Clear shortcut")
+        clearButton.setAccessibilityLabel(String(localized: "Clear shortcut"))
         addSubview(clearButton)
 
         focusRingType = .default
@@ -189,7 +189,8 @@ final class ShortcutRecorderControl: NSView {
 
     private func updateDisplay() {
         if isRecording {
-            field.stringValue = Self.symbols(for: heldModifiers)
+            // Only the modifiers held so far are shown (e.g. "⌥⇧"); the key code is irrelevant here.
+            field.stringValue = HotkeyConfiguration(keyCode: 0, modifiers: heldModifiers).modifierSymbols.joined()
             field.placeholderString = String(localized: "Type shortcut…")
         } else {
             field.stringValue = shortcut?.displayString ?? ""
@@ -202,16 +203,6 @@ final class ShortcutRecorderControl: NSView {
                 ? String(localized: "Recording")
                 : shortcut?.displayString ?? String(localized: "None")
         )
-    }
-
-    /// Modifier symbols in the standard macOS order (⌃ ⌥ ⇧ ⌘).
-    private static func symbols(for modifiers: NSEvent.ModifierFlags) -> String {
-        var symbols = ""
-        if modifiers.contains(.control) { symbols += "⌃" }
-        if modifiers.contains(.option) { symbols += "⌥" }
-        if modifiers.contains(.shift) { symbols += "⇧" }
-        if modifiers.contains(.command) { symbols += "⌘" }
-        return symbols
     }
 
     // MARK: Mouse & Keyboard

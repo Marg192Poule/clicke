@@ -8,7 +8,6 @@ enum SettingsTab: String, CaseIterable {
     case general
     case capture
     case shortcuts
-    case about
 
     /// Tab title, also used as the window title while the tab is selected.
     var title: String {
@@ -16,7 +15,6 @@ enum SettingsTab: String, CaseIterable {
         case .general: String(localized: "General")
         case .capture: String(localized: "Capture")
         case .shortcuts: String(localized: "Shortcuts")
-        case .about: String(localized: "About")
         }
     }
 
@@ -26,17 +24,18 @@ enum SettingsTab: String, CaseIterable {
         case .general: "gearshape"
         case .capture: "camera.viewfinder"
         case .shortcuts: "keyboard"
-        case .about: "info.circle"
         }
     }
 }
 
 // MARK: - Settings Window Controller
 
-/// Owns the Preferences window. The rest of the app only calls `SettingsWindowController.shared.show()`.
+/// Owns the Preferences window. The rest of the app only calls `SettingsWindowController.shared.show()`
+/// or `show(tab:)`.
 ///
-/// The window is created once and reused: closing it only orders it out.
-final class SettingsWindowController: NSWindowController {
+/// The window is created once and reused: closing it only orders it out. The model only follows
+/// changes while the window is open (see `SettingsModel`).
+final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     static let shared = SettingsWindowController()
 
     private static let frameAutosaveName = "ClickeSettingsWindow"
@@ -61,6 +60,7 @@ final class SettingsWindowController: NSWindowController {
         window.contentViewController = tabViewController
 
         super.init(window: window)
+        window.delegate = self
     }
 
     @available(*, unavailable)
@@ -79,6 +79,8 @@ final class SettingsWindowController: NSWindowController {
         guard let window else { return }
 
         if !window.isVisible {
+            // Catch up before the first frame, so the content and the window size match the current state.
+            model.startUpdating()
             tabViewController.fitWindowToSelectedTab(animated: false)
         }
         if !hasBeenPositioned {
@@ -106,14 +108,16 @@ final class SettingsWindowController: NSWindowController {
         window.setFrameAutosaveName(Self.frameAutosaveName)
     }
 
-    /// Re-activates the app after its activation policy changed (showing/hiding the Dock icon can
-    /// deactivate the app and send the window behind other apps).
-    func bringBackAfterActivationPolicyChange() {
-        DispatchQueue.main.async { [weak self] in
-            guard let window = self?.window, window.isVisible else { return }
-            NSApp.activate()
-            window.makeKeyAndOrderFront(nil)
-        }
+    // MARK: NSWindowDelegate
+
+    /// The window becomes key when it's shown and when the user comes back to it (e.g. from System
+    /// Settings): the only times system statuses are re-read.
+    func windowDidBecomeKey(_ notification: Notification) {
+        model.refreshSystemStatus()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        model.stopUpdating()
     }
 }
 
@@ -160,7 +164,6 @@ final class SettingsTabViewController: NSTabViewController {
         case .general: hostingController(for: tab, GeneralSettingsView(model: model))
         case .capture: hostingController(for: tab, CaptureSettingsView(model: model))
         case .shortcuts: hostingController(for: tab, ShortcutsSettingsView(model: model))
-        case .about: hostingController(for: tab, AboutSettingsView())
         }
     }
 
