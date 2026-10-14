@@ -311,6 +311,12 @@ struct HotkeyConfiguration: Codable, Equatable, Hashable {
             kVK_F18: "F18", kVK_F19: "F19", kVK_F20: "F20"
         ]
         if let name = special[Int(keyCode)] { return name }
+        // Like macOS, number-row keys always show their digit (e.g. ⇧⌘4 on AZERTY, not ⇧⌘').
+        let numberRow: [Int: String] = [
+            kVK_ANSI_0: "0", kVK_ANSI_1: "1", kVK_ANSI_2: "2", kVK_ANSI_3: "3", kVK_ANSI_4: "4",
+            kVK_ANSI_5: "5", kVK_ANSI_6: "6", kVK_ANSI_7: "7", kVK_ANSI_8: "8", kVK_ANSI_9: "9"
+        ]
+        if let digit = numberRow[Int(keyCode)] { return digit }
         if let name = translateKeyCodeWithCurrentLayout(keyCode) { return name }
         return "Key \(keyCode)"
     }
