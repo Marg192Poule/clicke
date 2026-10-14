@@ -1,4 +1,5 @@
 import AppKit
+import CoreImage
 import Foundation
 import Observation
 import os
@@ -69,13 +70,13 @@ nonisolated enum RedactionStatus: Equatable, Sendable {
     var message: AttributedString {
         switch self {
         case .found(let count):
-            AttributedString(localized: "Found ^[\(count) item](inflect: true)")
+            AttributedString(localized: "Found ^[\(count) item](inflect: true). Review the image to make sure nothing was missed.")
         case .alreadyHidden(let count):
-            AttributedString(localized: "Found ^[\(count) item](inflect: true), already hidden")
+            AttributedString(localized: "Found ^[\(count) item](inflect: true), all already hidden. Review the image to make sure nothing was missed.")
         case .nothingFound:
-            AttributedString(localized: "Nothing sensitive found")
+            AttributedString(localized: "Nothing sensitive found. Review the image to make sure.")
         case .detectionFailed:
-            AttributedString(localized: "Couldn’t read the text in this image")
+            AttributedString(localized: "Couldn’t read the text in this image.")
         case .applyFailed:
             AttributedString(localized: "Couldn’t apply the changes. Try again.")
         }
@@ -88,15 +89,17 @@ nonisolated enum RedactionStatus: Equatable, Sendable {
 /// live preview, sensitive text detection and the final render.
 ///
 /// Region geometry is in the image's pixel space (top-left origin), so it doesn't depend on
-/// how large the image is displayed.
+/// how large the image is displayed. Call `close()` when the sheet goes away: it stops
+/// background work and releases the rendering resources.
 @Observable
 final class RedactionEditorModel {
 
     // MARK: Constants
 
-    /// Longest side of the downscaled copy used for the live preview.
+    /// Longest side of the downscaled copy that is displayed and used for the live preview.
     private static let previewMaxDimension: CGFloat = 2560
     private static let maximumUndoSteps = 100
+    private static let statusDuration: Duration = .seconds(8)
     private static let draftID = UUID()
     private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "clicke", category: "Redaction")
 
@@ -113,9 +116,13 @@ final class RedactionEditorModel {
     private(set) var pixelSize: CGSize
     /// Source pixels per point (2 for Retina screenshots).
     private(set) var pixelsPerPoint: CGFloat = 1
+    /// The pixels being redacted. Everything shown and rendered comes from them, so the sheet
+    /// can't show another representation of the image than the one that is changed.
     @ObservationIgnored private var cgImage: CGImage?
-    /// Whether the image could be decoded; editing is disabled otherwise.
+    /// Whether the image is ready; editing is disabled otherwise.
     private(set) var canEdit = false
+    /// Whether the image couldn't be decoded.
+    private(set) var loadFailed = false
 
     // MARK: Regions
 
@@ -141,11 +148,16 @@ final class RedactionEditorModel {
 
     // MARK: Preview
 
+    /// The image as displayed: the working copy, at most `previewMaxDimension` pixels long.
+    private(set) var displayImage: CGImage?
     /// Rendered effects for the preview, keyed by region ID.
     private(set) var patches: [UUID: ImageRedactor.PreviewPatch] = [:]
     @ObservationIgnored private var workingCopy: ImageRedactor.WorkingCopy?
     @ObservationIgnored private var previewTask: Task<Void, Never>?
     @ObservationIgnored private var previewIsStale = false
+    /// Core Image context for the preview and the final render, released by `close()`.
+    @ObservationIgnored private var renderContext: CIContext?
+    @ObservationIgnored private var isClosed = false
 
     // MARK: Status
 
@@ -153,6 +165,7 @@ final class RedactionEditorModel {
     private(set) var isApplying = false
     private(set) var status: RedactionStatus?
     @ObservationIgnored private var detectionTask: Task<Void, Never>?
+    @ObservationIgnored private var applyTask: Task<Void, Never>?
     @ObservationIgnored private var statusTask: Task<Void, Never>?
 
     // MARK: - Lifecycle
@@ -163,31 +176,41 @@ final class RedactionEditorModel {
         self.pixelSize = Self.estimatedPixelSize(of: image)
     }
 
-    /// Decodes the image and builds the working copy used for the live preview.
+    /// Decodes the image and builds the working copy that is displayed and previewed.
     func prepare() async {
-        guard cgImage == nil else { return }
-        guard let decoded = Self.bestCGImage(from: image) else {
+        guard cgImage == nil, !loadFailed, !isClosed else { return }
+        guard let decoded = image.bestCGImage else {
             Self.logger.error("Couldn't get pixels for the image to redact")
+            loadFailed = true
             return
         }
         cgImage = decoded
         pixelSize = CGSize(width: decoded.width, height: decoded.height)
         pixelsPerPoint = image.size.width > 0 ? max(CGFloat(decoded.width) / image.size.width, 1) : 1
-        canEdit = true
 
-        workingCopy = await ImageRedactor.makeWorkingCopy(
+        let copy = await ImageRedactor.makeWorkingCopy(
             of: decoded,
             maxDimension: Self.previewMaxDimension,
             pixelsPerPoint: pixelsPerPoint
         )
+        guard !isClosed else { return }
+        workingCopy = copy
+        displayImage = copy.image
+        canEdit = true
         setNeedsPreview()
     }
 
-    /// Stops background work when the sheet goes away.
-    func cancelTasks() {
+    /// Stops background work, including a render in progress, and releases the rendering
+    /// resources. Call it when the sheet goes away.
+    func close() {
+        isClosed = true
+        cancelApply()
         detectionTask?.cancel()
         previewTask?.cancel()
         statusTask?.cancel()
+        renderContext = nil
+        workingCopy = nil
+        patches = [:]
     }
 
     // MARK: - Queries
@@ -218,12 +241,24 @@ final class RedactionEditorModel {
     var canUndo: Bool { !undoStack.isEmpty }
     var canRedo: Bool { !redoStack.isEmpty }
 
+    /// Whether there are marked areas that closing the sheet would discard.
+    var hasUnappliedChanges: Bool { !regions.isEmpty }
+
+    /// Whether Apply is available. Not while detection runs, so no detected area can be left out.
+    var canApply: Bool { canEdit && !isApplying && !isDetecting }
+
+    /// Whether to explain how to get started.
+    var showsHint: Bool { canEdit && regions.isEmpty && draft == nil && status == nil && !isDetecting }
+
+    /// Regions can't change while the image isn't ready or the result is being rendered.
+    private var isLocked: Bool { !canEdit || isApplying }
+
     // MARK: - Pointer Interaction
 
     /// Starts a press on `target` at `point` (image pixels).
     /// - Parameter minimumSide: Smallest region side, in pixels, kept when drawing or resizing.
     func beginInteraction(on target: RedactionHitTarget, at point: CGPoint, minimumSide: CGFloat) {
-        guard canEdit else { return }
+        guard !isLocked else { return }
         endInteraction()
         self.minimumSide = max(minimumSide, 1)
 
@@ -302,38 +337,44 @@ final class RedactionEditorModel {
     }
 
     func setStyle(_ style: RedactionStyle) {
+        guard !isLocked else { return }
         settings.style = style
         updateSelectedRegion { $0.style = style }
     }
 
     /// Changes the style of a specific region (context menu).
     func setStyle(_ style: RedactionStyle, forRegion id: UUID) {
+        guard !isLocked else { return }
         recordChange { updateRegion(id) { $0.style = style } }
         if id == selectedID { settings.style = style }
     }
 
     /// Sets the effect strength. Wrap continuous changes in `beginChange()`/`endChange()`.
     func setStrength(_ strength: Double) {
+        guard !isLocked else { return }
         settings.strength = min(max(strength, 0), 1)
         updateSelectedRegion { $0.strength = settings.strength }
     }
 
     func setFill(_ fill: RedactionFill) {
+        guard !isLocked else { return }
         settings.fill = fill
         updateSelectedRegion { $0.fill = fill }
     }
 
     func delete(_ id: UUID) {
+        guard !isLocked else { return }
         recordChange { regions.removeAll { $0.id == id } }
         if selectedID == id { selectedID = nil }
     }
 
     func deleteSelection() {
-        guard let selectedID else { return }
+        guard !isLocked, let selectedID else { return }
         delete(selectedID)
     }
 
     func clearAll() {
+        guard !isLocked else { return }
         endInteraction()
         recordChange { regions.removeAll() }
         selectedID = nil
@@ -357,6 +398,7 @@ final class RedactionEditorModel {
     }
 
     func undo() {
+        guard !isLocked else { return }
         endInteraction()
         endChange()
         guard let previous = undoStack.popLast() else { return }
@@ -366,6 +408,7 @@ final class RedactionEditorModel {
     }
 
     func redo() {
+        guard !isLocked else { return }
         endInteraction()
         endChange()
         guard let next = redoStack.popLast() else { return }
@@ -397,9 +440,10 @@ final class RedactionEditorModel {
 
     // MARK: - Sensitive Text
 
-    /// Recognizes text on device and adds a region over each sensitive item, with the current style.
+    /// Recognizes text on device and adds a region over each sensitive item. Secrets, card
+    /// numbers and IBANs get a solid fill; other items use the current style.
     func findSensitiveText() {
-        guard !isDetecting, let cgImage else { return }
+        guard !isDetecting, !isLocked, let cgImage else { return }
         isDetecting = true
         show(nil)
 
@@ -408,54 +452,101 @@ final class RedactionEditorModel {
             do {
                 let matches = try await SensitiveTextDetector.detect(in: cgImage)
                 try Task.checkCancellation()
-                addDetectedRegions(matches.map(\.rect))
+                addDetectedRegions(matches)
             } catch is CancellationError {
                 // The sheet closed.
             } catch {
+                guard !Task.isCancelled else { return }
                 Self.logger.error("Text recognition failed: \(error.localizedDescription, privacy: .public)")
                 show(.detectionFailed)
             }
         }
     }
 
-    private func addDetectedRegions(_ rects: [CGRect]) {
-        guard !rects.isEmpty else {
+    private func addDetectedRegions(_ matches: [SensitiveTextMatch]) {
+        guard !matches.isEmpty else {
             show(.nothingFound)
             return
         }
 
         var added: [RedactionRegion] = []
-        for rect in rects {
-            let covered = (regions + added).contains { Self.coverage(of: rect, by: $0.rect) > 0.9 }
+        for match in matches {
+            let covered = (regions + added).contains { Self.coverage(of: match.rect, by: $0.rect) > 0.9 }
             if !covered {
-                added.append(RedactionRegion(rect: rect, settings: settings))
+                added.append(RedactionRegion(rect: match.rect, settings: detectionSettings(for: match.kind)))
             }
         }
 
         if added.isEmpty {
-            show(.alreadyHidden(rects.count))
+            show(.alreadyHidden(matches.count))
         } else {
             recordChange { regions.append(contentsOf: added) }
-            show(.found(rects.count))
+            show(.found(matches.count))
         }
+    }
+
+    /// The style of a region added over detected text of `kind`.
+    private func detectionSettings(for kind: SensitiveTextKind) -> RedactionToolSettings {
+        var detected = settings
+        if kind.needsSolidFill {
+            detected.style = .solid
+        }
+        return detected
     }
 
     // MARK: - Apply
 
-    /// Renders the redacted image at full resolution, or returns nil if rendering failed.
-    /// The result has the same point size and pixel dimensions as the original.
-    func renderResult() async -> NSImage? {
+    /// Renders the regions into the image at full resolution, off the main actor.
+    ///
+    /// `completion` receives the redacted image, with the same point size, pixel size and
+    /// color space as the original, or nil when there is nothing to hide. It isn't called if
+    /// rendering fails, or if `cancelApply()` or `close()` runs first.
+    func apply(completion: @escaping (NSImage?) -> Void) {
+        guard canApply, let cgImage else { return }
         endInteraction()
-        guard let cgImage else { return nil }
-        guard !regions.isEmpty else { return image }
-
-        isApplying = true
-        defer { isApplying = false }
-        guard let output = await ImageRedactor.redacting(cgImage, regions: regions, pixelsPerPoint: pixelsPerPoint) else {
-            show(.applyFailed)
-            return nil
+        guard !regions.isEmpty else {
+            completion(nil)
+            return
         }
-        return NSImage(cgImage: output, size: image.size)
+
+        // Set before the render starts, so a second Return can't start another one.
+        isApplying = true
+        show(nil)
+        let regions = regions
+        let pixelsPerPoint = pixelsPerPoint
+        let context = context()
+        applyTask = Task {
+            let output = await ImageRedactor.redacting(cgImage, regions: regions, pixelsPerPoint: pixelsPerPoint, context: context)
+            // Cancelled: `cancelApply()` already reset the state.
+            guard !Task.isCancelled else { return }
+            isApplying = false
+            applyTask = nil
+            guard let output else {
+                show(.applyFailed)
+                return
+            }
+            completion(Self.bitmapImage(output, pointSize: image.size))
+        }
+    }
+
+    /// Stops a render in progress; its result is dropped.
+    func cancelApply() {
+        applyTask?.cancel()
+        applyTask = nil
+        isApplying = false
+    }
+
+    /// An image backed by a bitmap of `cgImage`, with the given point size. Unlike
+    /// `NSImage(cgImage:size:)`, it keeps the pixels and color space as they are.
+    private static func bitmapImage(_ cgImage: CGImage, pointSize: CGSize) -> NSImage {
+        let representation = NSBitmapImageRep(cgImage: cgImage)
+        let size = pointSize.width > 0 && pointSize.height > 0
+            ? pointSize
+            : CGSize(width: cgImage.width, height: cgImage.height)
+        representation.size = size
+        let image = NSImage(size: size)
+        image.addRepresentation(representation)
+        return image
     }
 
     // MARK: - Preview Rendering
@@ -464,7 +555,7 @@ final class RedactionEditorModel {
     /// meanwhile are picked up by the next pass, so dragging stays smooth.
     private func setNeedsPreview() {
         previewIsStale = true
-        guard previewTask == nil, workingCopy != nil else { return }
+        guard previewTask == nil, workingCopy != nil, !isClosed else { return }
         previewTask = Task {
             await renderStalePreviews()
             previewTask = nil
@@ -489,7 +580,8 @@ final class RedactionEditorModel {
             }
             guard !requests.isEmpty else { continue }
 
-            let rendered = await ImageRedactor.renderPreviewPatches(requests, in: workingCopy)
+            let rendered = await ImageRedactor.renderPreviewPatches(requests, in: workingCopy, context: context())
+            guard !Task.isCancelled else { return }
             var updated = patches
             for patch in rendered {
                 updated[patch.id] = patch
@@ -500,12 +592,25 @@ final class RedactionEditorModel {
 
     // MARK: - Helpers
 
+    /// The Core Image context of this session, created on first use.
+    private func context() -> CIContext {
+        if let renderContext {
+            return renderContext
+        }
+        let context = ImageRedactor.makeContext()
+        // Not kept once closed, so a late render can't bring it back.
+        if !isClosed {
+            renderContext = context
+        }
+        return context
+    }
+
     private func show(_ status: RedactionStatus?) {
         statusTask?.cancel()
         self.status = status
         guard status != nil else { return }
         statusTask = Task {
-            try? await Task.sleep(for: .seconds(5))
+            try? await Task.sleep(for: Self.statusDuration)
             guard !Task.isCancelled else { return }
             self.status = nil
         }
@@ -560,19 +665,5 @@ final class RedactionEditorModel {
         }
         let scale = NSScreen.main?.backingScaleFactor ?? 2
         return CGSize(width: (image.size.width * scale).rounded(), height: (image.size.height * scale).rounded())
-    }
-
-    /// The image's pixels at their full resolution.
-    private static func bestCGImage(from image: NSImage) -> CGImage? {
-        let bitmaps = image.representations.compactMap { $0 as? NSBitmapImageRep }
-        if let largest = bitmaps.max(by: { $0.pixelsWide * $0.pixelsHigh < $1.pixelsWide * $1.pixelsHigh }),
-           let cgImage = largest.cgImage {
-            return cgImage
-        }
-        // Other representations (Core Graphics-backed, PDF…): rasterize at the largest pixel size.
-        let size = estimatedPixelSize(of: image)
-        guard size.width >= 1, size.height >= 1 else { return nil }
-        var rect = CGRect(origin: .zero, size: size)
-        return image.cgImage(forProposedRect: &rect, context: nil, hints: nil)
     }
 }
