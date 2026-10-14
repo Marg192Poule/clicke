@@ -43,6 +43,14 @@ final class ScreenshotEditorWindow: NSObject, NSWindowDelegate {
         window?.performClose(nil)
     }
 
+    /// Brings the open editor window to the front without changing its document.
+    func bringToFront() {
+        guard let window else { return }
+        if window.isMiniaturized { window.deminiaturize(nil) }
+        NSApp.activate()
+        window.makeKeyAndOrderFront(nil)
+    }
+
     /// Whether the open editor holds edits that were never copied, saved or dragged out.
     /// (Contract for the app delegate's quit confirmation; implemented by the editor.)
     var hasUnexportedChanges: Bool { false }

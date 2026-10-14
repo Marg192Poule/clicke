@@ -34,9 +34,13 @@ struct ScreenCapture: Identifiable {
     var fileName: String { baseFileName + ".png" }
 
     /// The default file name without extension.
-    var baseFileName: String {
-        let day = Self.dayFormatter.string(from: date)
-        let time = Self.timeFormatter.string(from: date)
+    var baseFileName: String { Self.baseFileName(for: date) }
+
+    /// The app-wide default file name (without extension) for an image made at `date`:
+    /// "Clické 2026-10-14 at 11.32.05". Used for captures and editor exports alike.
+    static func baseFileName(for date: Date) -> String {
+        let day = dayFormatter.string(from: date)
+        let time = timeFormatter.string(from: date)
         return String(localized: "Clické \(day) at \(time)", comment: "Default file name of a capture: date, then time")
     }
 
