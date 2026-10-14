@@ -103,9 +103,15 @@ nonisolated enum ImageImport {
     enum Preparation {
         /// Usable as is.
         case ready(ImportedImage)
-        /// A bitmap above the layer limits: pass it to `downsample(_:maxPixelSize:)`, off the main actor.
-        case needsDownsampling(ImportedImage, maxPixelSize: Int)
+        /// A large bitmap: pass it to `decode(_:maxPixelSize:)`, off the main actor, which also
+        /// downsamples it if it's above the layer limits.
+        case needsDecoding(ImportedImage, maxPixelSize: Int)
     }
+
+    /// Bitmaps above this many pixels are decoded off the main actor even within the limits: a
+    /// file-backed `NSImage` would otherwise decode on the main actor when first drawn. Screen
+    /// captures (≤ 33 MP for an 8K display) stay below it, so they open without a delay.
+    static let backgroundDecodingPixelCount = 50_000_000
 
     /// Checks an `NSImage` from its representations (no decoding) and gets its bitmap.
     /// Vector images are rasterized here, at a bounded size.
@@ -123,15 +129,37 @@ nonisolated enum ImageImport {
             guard let cgImage = bitmap.cgImage else { throw ImageImportError.unreadable }
             let full = ImportedImage(cgImage: cgImage, pointSize: CGSize(width: pixels.width / density, height: pixels.height / density))
             let limit = boundedLongestSide(for: pixels)
-            return limit < Int(max(pixels.width, pixels.height)) ? .needsDownsampling(full, maxPixelSize: limit) : .ready(full)
+            let isLarge = limit < Int(max(pixels.width, pixels.height))
+                || bitmap.pixelsWide * bitmap.pixelsHigh > backgroundDecodingPixelCount
+            return isLarge ? .needsDecoding(full, maxPixelSize: limit) : .ready(full)
         }
         return .ready(try rasterizeVector(image))
     }
 
-    /// Downsamples a bitmap that `prepare(_:)` found too large. Synchronous: call it off the main actor.
-    static func downsample(_ image: ImportedImage, maxPixelSize: Int) -> ImportedImage {
-        let small = ImageLoadingService.downsampleSync(image.cgImage, maxPixelSize: maxPixelSize)
-        return ImportedImage(cgImage: small, pointSize: fittedPointSize(image.pointSize, for: small))
+    /// Decodes a bitmap that `prepare(_:)` found large, downsampled to `maxPixelSize` if needed.
+    /// Synchronous: call it off the main actor.
+    static func decode(_ image: ImportedImage, maxPixelSize: Int) -> ImportedImage {
+        let source = image.cgImage
+        let decoded = max(source.width, source.height) > maxPixelSize
+            ? ImageLoadingService.downsampleSync(source, maxPixelSize: maxPixelSize)
+            : redrawn(source)
+        return ImportedImage(cgImage: decoded, pointSize: fittedPointSize(image.pointSize, for: decoded))
+    }
+
+    /// The image drawn into a bitmap of its own size: forces a lazily decoded image to decode now.
+    private static func redrawn(_ image: CGImage) -> CGImage {
+        let colorSpace = image.colorSpace.flatMap { $0.model == .rgb ? $0 : nil } ?? CGColorSpace(name: CGColorSpace.sRGB)!
+        guard let context = CGContext(
+            data: nil,
+            width: image.width,
+            height: image.height,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return image }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        return context.makeImage() ?? image
     }
 
     /// Rasterizes a vector image (or any non-bitmap representation) at 2× when it fits,

@@ -316,8 +316,8 @@ final class ScreenshotEditorViewModel {
         selectedItemID = item.id
     }
 
-    /// Adds images as new layers. Images above the layer size limit are downsampled off the main
-    /// actor first; images that can't be edited are reported.
+    /// Adds images as new layers. Large images are decoded (and downsampled to the layer size
+    /// limit) off the main actor first; images that can't be edited are reported.
     /// - Returns: The number of layers added or on the way.
     @discardableResult
     func addImages(_ images: [NSImage]) -> Int {
@@ -328,8 +328,8 @@ final class ScreenshotEditorViewModel {
                 switch try ImageImport.prepare(image) {
                 case .ready(let imported):
                     addLayer(imported)
-                case .needsDownsampling(let imported, let maxPixelSize):
-                    importInBackground { ImageImport.downsample(imported, maxPixelSize: maxPixelSize) }
+                case .needsDecoding(let imported, let maxPixelSize):
+                    importInBackground { ImageImport.decode(imported, maxPixelSize: maxPixelSize) }
                 }
                 added += 1
             } catch {
@@ -429,9 +429,9 @@ final class ScreenshotEditorViewModel {
                 switch try ImageImport.prepare(image) {
                 case .ready(let imported):
                     addImportedLayer(imported, isInitial: isInitial)
-                case .needsDownsampling(let imported, let maxPixelSize):
-                    let small = try await Self.runOffMainActor { ImageImport.downsample(imported, maxPixelSize: maxPixelSize) }
-                    addImportedLayer(small, isInitial: isInitial)
+                case .needsDecoding(let imported, let maxPixelSize):
+                    let decoded = try await Self.runOffMainActor { ImageImport.decode(imported, maxPixelSize: maxPixelSize) }
+                    addImportedLayer(decoded, isInitial: isInitial)
                 }
             } catch {
                 presentImportError(error, fileName: fileName)
