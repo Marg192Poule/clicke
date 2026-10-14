@@ -1,99 +1,120 @@
 <p align="center">
-  <img src="public/logo.png" width="128" height="128" alt="Clicke">
+  <img src="public/logo.png" width="128" height="128" alt="Clické">
 </p>
 
-# Clicke
+# Clické
 
-A macOS menu bar application for capturing and styling screenshots.
+A macOS menu bar app to capture screenshots and make them look great: backgrounds, window mockups, shadows, social media sizes, and privacy tools to hide sensitive information before you share.
 
 ## Features
 
-- Screenshot capture with customizable keyboard shortcuts
-- Styling options: frames, backgrounds (solid, gradient, mesh gradient, wallpapers)
-- Social media export presets (Twitter, Instagram, LinkedIn, etc.)
-- Privacy tools for blurring sensitive content
-- Copy to clipboard or save as PNG
+- **Capture** an area, a window, or the full screen with global keyboard shortcuts or from the menu bar.
+- **Floating preview** after each capture (like macOS): edit, copy, save, or drag the screenshot straight into another app.
+- **Editor**
+  - Backgrounds: bundled wallpapers, your own image, solid colors, gradients, plus blur, grain, saturation and brightness.
+  - Mockups: plain, glass frame, border, or a macOS window with traffic lights (light and dark).
+  - Soft shadows, rounded corners, padding, rotation and 3D tilt.
+  - Several screenshots on one canvas (layers).
+  - Canvas sizes for X, Instagram, LinkedIn, YouTube, Pinterest, Dribbble and standard ratios, or **Auto** at full Retina resolution.
+  - Undo and redo for every change, live preview, and the last style is remembered for your next screenshot.
+  - Export as PNG or JPEG, copy to the clipboard, or drag the result out of the editor.
+- **Redact** sensitive information: pixelate, blur or cover any area. **Find Sensitive Text** spots email addresses, phone numbers, card numbers, IBANs, API keys and tokens, using text recognition that runs entirely on your Mac.
+- **Settings**: launch at login, Dock icon, capture sound, what happens after a capture, automatic saving to a folder, and custom shortcuts.
+
+## Privacy
+
+- Clické makes **no network connections**. Text recognition (Vision) runs on-device.
+- Global shortcuts use the system hot key API: Clické **doesn't monitor your keyboard** and doesn't need the Accessibility permission.
+- Captures are written to a private temporary folder, read, then deleted. Nothing is copied to your clipboard unless "Copy to clipboard" is on.
 
 ## Requirements
 
-- macOS 14.0 or later
-- Accessibility permissions for global hotkeys
+- macOS 26.1 or later
+- The **Screen Recording** permission (System Settings > Privacy & Security > Screen & System Audio Recording). Clické asks for it the first time you capture.
 
 ## Installation
 
-Download the latest `.dmg` :
-- from the [clické.com](https://clické.com) website, then drag the app to your Applications folder.
-- from the [Release](https://github.com/nathbns/clicke/releases/) page, then drag the app to your Applications folder.
+Download the latest `.dmg`:
+- from the [clické.com](https://clické.com) website, or
+- from the [Releases](https://github.com/nathbns/clicke/releases/) page,
 
-The app is not notarized (no Apple Developer subscription). On first launch, macOS will block it. To open:
+then drag the app to your Applications folder.
 
-1. Try to open the app (it will be blocked)
-2. Go to System Settings > Privacy & Security
-3. Click "Open Anyway" next to the Clicke message
+If macOS blocks the app on first launch because it isn't notarized: open System Settings > Privacy & Security and click "Open Anyway" next to the Clické message.
 
 ## Usage
 
-### Capture
-
-- Click the menu bar icon and select Screenshot
-- Or use the default shortcut: Option + Shift + 4
-
-### Editor
-
-![Editor](public/contentEditor.png)
-
-The editor provides tabs for styling, canvas background, and export options.
-
-### Settings
-
-![Settings](public/contentSetting.png)
-
-### Menu Bar
-
-![Menu](public/contentMenuTabApp.png)
-
-### Keyboard Shortcuts
+### Keyboard shortcuts
 
 | Action | Default |
 |--------|---------|
-| Screenshot (area) | Option + Shift + 4 |
-| Window capture | Option + Shift + T |
-| Preferences | Command + , |
+| Capture area | ⌥⇧4 |
+| Capture window | ⌥⇧T |
+| Capture full screen | ⌥⇧3 |
+| Settings | ⌘, |
 
-Shortcuts are customizable in Preferences.
+Shortcuts can be changed in Settings > Shortcuts. If another app already uses a shortcut, Settings tells you.
+
+### In the editor
+
+| Action | Shortcut |
+|--------|----------|
+| Copy the image | ⌘C |
+| Save | ⌘S |
+| Undo / Redo | ⌘Z / ⇧⌘Z |
+| Zoom in / out | ⌘+ / ⌘− |
+| Actual size / Zoom to fit | ⌘0 / ⌘9 |
+| Show or hide the inspector | ⌥⌘I |
+| Move the selected image | Arrow keys (⇧ for 10 pt) |
+| Delete the selected image | ⌫ |
+
+Drop images onto the canvas to add them as layers. Right-click an image for more actions.
+
+![Editor](public/contentEditor.png)
 
 ## Building from Source
 
 ### Prerequisites
 
-- Xcode 16.0 or later
-- macOS 14.0 SDK
+- Xcode 26 or later
+- macOS 26.1 SDK
 
 ### Steps
 
 ```bash
 git clone https://github.com/nathbns/clicke.git
 cd clicke
-open clicke.xcodeproj
+open clické.xcodeproj
 ```
 
 Select your development team in Signing & Capabilities, then build with Command + R.
 
+### Releasing
+
+The app uses the hardened runtime and isn't sandboxed (it runs `/usr/sbin/screencapture` and saves to a folder you choose). To ship a build that opens without warnings, archive it with a Developer ID certificate and notarize it, then check the result:
+
+```bash
+codesign -dv --verbose=4 Clické.app   # expect flags=0x10000(runtime)
+spctl -a -vv Clické.app               # expect "accepted, source=Notarized Developer ID"
+```
+
 ## Project Structure
 
 ```
-clicke/
-├── Coordinator/      App lifecycle, windows
+clické/
+├── Capture/          Screen capture, floating preview, export of captures
+├── Coordinator/      App delegate, editor window
 ├── Extensions/       Swift extensions
 ├── Features/
-│   ├── Editor/       Screenshot canvas and renderer
-│   └── Settings/     Preferences views
-├── Managers/         Hotkey and toast managers
-├── Models/           Data models
-├── Services/         Image loading and processing
-├── Shaders/          Metal shaders for GPU effects
-├── View/             Main views
-└── ViewModel/        View models
+│   ├── Editor/       Canvas, inspector, rendering
+│   │   └── Redaction/  Redaction sheet and sensitive text detection
+│   └── Settings/     Settings window
+├── Managers/         Hotkeys, menus, toasts
+├── Models/           Settings and style models
+├── Services/         Image loading, encoding, clipboard
+├── View/             Root views
+├── ViewModel/        Editor view model
+└── public/           Bundled wallpapers
 ```
 
 ## Contributing

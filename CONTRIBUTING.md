@@ -1,4 +1,4 @@
-# Contributing to Clicke
+# Contributing to Clické
 
 ## Ways to Contribute
 
@@ -11,8 +11,8 @@
 
 ### Prerequisites
 
-- macOS 14.0 or later
-- Xcode 16.0 or later
+- macOS 26.1 or later
+- Xcode 26 or later
 - Git
 
 ### Getting Started
@@ -27,7 +27,7 @@
 
 3. Open in Xcode:
    ```bash
-   open clicke.xcodeproj
+   open clické.xcodeproj
    ```
 
 4. Build and run with Command + R
@@ -41,23 +41,26 @@
 - Keep functions small and focused
 - Add comments for complex logic
 
-### SwiftUI
+### SwiftUI and AppKit
 
-- Use `@State` for local view state
-- Use `@StateObject` for owned observable objects
-- Use `@ObservedObject` for passed-in observable objects
+- Use `@State` for local view state and `@Observable` models for shared state
 - Extract reusable views into separate structs
+- Prefer system controls, SF Symbols and system colors so the app follows light/dark mode and accessibility settings
+- Use plain `import X` (the project enables member import visibility; mixing `internal import` and `import` for the same module breaks the build)
+- User-facing strings are plain English literals (SwiftUI) or `String(localized:)` (AppKit), never keys like `"settings.title"`
 
 ### Project Structure
 
 ```
-clicke/
-├── Coordinator/     App lifecycle, windows
+clické/
+├── Capture/         Screen capture, floating preview
+├── Coordinator/     App delegate, editor window
 ├── Extensions/      Swift extensions
-├── Features/        Feature modules (Editor, Settings)
-├── Managers/        Singleton managers
+├── Features/        Feature modules (Editor, Redaction, Settings)
+├── Managers/        Hotkeys, menus, toasts
 ├── Models/          Data models
-├── View/            Main views
+├── Services/        Image loading, encoding, clipboard
+├── View/            Root views
 └── ViewModel/       View models
 ```
 
