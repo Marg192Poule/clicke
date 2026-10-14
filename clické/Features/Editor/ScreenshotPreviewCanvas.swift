@@ -1,378 +1,336 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
-/// The main canvas view for previewing and editing screenshots.
+/// The editor's main area: the live canvas on a neutral workspace, with zoom, pan,
+/// layer selection / dragging / resizing, and image drop.
 struct ScreenshotPreviewCanvas: View {
-    let items: [CanvasItem]
-    let config: ScreenshotStyleConfig
-    let selectedItemID: UUID?
-    @Binding var isDragging: Bool
-    var onItemOffsetChanged: ((UUID, CGSize) -> Void)? = nil
-    var onItemSelected: ((UUID) -> Void)? = nil
-    var isRendering: Bool = false
-    var preloadedBackgroundImage: NSImage? = nil
+    let model: ScreenshotEditorViewModel
 
-    private let canvasCornerRadius: CGFloat = 24
-    @State private var loadedBackgroundImage: NSImage? = nil
-    @State private var currentLoadingURL: URL? = nil
+    @State private var panStart: CGSize?
+    @State private var magnificationStartZoom: CGFloat?
+    @State private var isDropTargeted = false
 
-    /// Reference image used for canvas sizing (largest item)
-    private var referenceImage: NSImage {
-        items.max(by: { $0.image.size.width * $0.image.size.height < $1.image.size.width * $1.image.size.height })?.image ?? NSImage()
-    }
+    /// Coordinate space of the drawn canvas (origin at its top-left corner).
+    static let coordinateSpace = "EditorCanvas"
 
     var body: some View {
-        ZStack {
-            // Background with unified blur (except transparent)
-            if config.backgroundType == .transparent {
-                backgroundView
-                    .frame(width: totalWidth, height: totalHeight)
-            } else {
-                if config.gradientConfig.blurAmount > 0 {
-                    backgroundView
-                        .frame(width: totalWidth, height: totalHeight)
-                        .clipped()
-                        .blur(radius: config.gradientConfig.blurAmount)
-                        .drawingGroup(opaque: true, colorMode: .linear)
-                } else {
-                    backgroundView
-                        .frame(width: totalWidth, height: totalHeight)
-                        .clipped()
-                }
+        GeometryReader { proxy in
+            let viewport = proxy.size
+            let zoom = model.zoom
+            let geometry = model.geometry
+            let canvasSize = CGSize(width: geometry.canvasSize.width * zoom, height: geometry.canvasSize.height * zoom)
 
-                // Noise overlay (skip during export)
-                if config.gradientConfig.noiseAmount > 0 && !isRendering {
-                    NoiseTextureView(intensity: config.gradientConfig.noiseAmount / 100, size: CGSize(width: totalWidth, height: totalHeight))
-                }
+            ZStack {
+                // The workspace: drag to pan, click to deselect, double-click to fit.
+                Color.clear
+                    .contentShape(Rectangle())
+                    .gesture(panGesture)
+                    .onTapGesture(count: 2) { model.zoomToFit() }
+                    .onTapGesture { model.selectedItemID = nil }
+
+                CanvasStage(model: model, geometry: geometry, zoom: zoom, canvasSize: canvasSize)
+                    .position(x: viewport.width / 2 + model.pan.width, y: viewport.height / 2 + model.pan.height)
             }
-
-            // Render each canvas item sorted by zIndex
-            ForEach(items.sorted(by: { $0.zIndex < $1.zIndex })) { item in
-                CanvasItemView(
-                    item: item,
-                    config: config,
-                    isSelected: !isRendering && item.id == selectedItemID,
-                    isDragging: $isDragging,
-                    onOffsetChanged: { newOffset in
-                        onItemOffsetChanged?(item.id, newOffset)
-                    },
-                    onSelected: {
-                        onItemSelected?(item.id)
-                    }
-                )
-            }
-
-            // Text overlays
-            ForEach(config.textOverlays) { overlay in
-                textOverlayView(overlay)
+            .frame(width: viewport.width, height: viewport.height)
+            .simultaneousGesture(magnifyGesture)
+        }
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { size in
+            model.viewportDidChange(to: size)
+        }
+        .clipped()
+        .background {
+            ScrollWheelMonitor { event, location in
+                model.handleScroll(event, at: location)
             }
         }
-        .frame(width: totalWidth, height: totalHeight)
-        .clipShape(RoundedRectangle(cornerRadius: canvasCornerRadius))
-    }
-
-    // MARK: - Text Overlay View
-
-    @ViewBuilder
-    private func textOverlayView(_ overlay: TextOverlay) -> some View {
-        Text(overlay.text)
-            .font(.system(size: overlay.fontSize, weight: overlay.fontWeight))
-            .foregroundColor(overlay.color)
-            .opacity(overlay.opacity)
-            .blur(radius: overlay.isBlurred ? 8 : 0)
-            .rotationEffect(.degrees(overlay.rotation))
-            .shadow(color: .black.opacity(0.5), radius: 2, x: 1, y: 1)
-    }
-
-    // MARK: - Redact Region View
-
-    @ViewBuilder
-    private func redactRegionView(_ region: RedactRegion) -> some View {
-        Group {
-            switch region.style {
-            case .blur:
-                Rectangle()
-                    .fill(.ultraThinMaterial)
-                    .blur(radius: 10)
-            case .pixelate:
-                PixelateView()
-            case .blackBar:
-                Rectangle()
-                    .fill(Color.black)
+        .background(Color(nsColor: .underPageBackgroundColor).ignoresSafeArea())
+        .onDrop(of: [.fileURL, .image], isTargeted: $isDropTargeted) { providers in
+            model.handleDrop(providers)
+        }
+        .overlay {
+            if isDropTargeted {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(Color.accentColor, lineWidth: 3)
+                    .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .padding(8)
+                    .allowsHitTesting(false)
             }
         }
-        .frame(width: region.rect.width, height: region.rect.height)
-        .position(x: region.rect.midX, y: region.rect.midY)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Canvas")
     }
 
-    // MARK: - Dimensions
+    // MARK: Gestures
 
-    private var totalWidth: CGFloat {
-        if let preset = config.selectedSocialPreset {
-            return CGFloat(preset.width)
-        }
-        return referenceImage.size.width + config.padding * 2
-    }
-
-    private var totalHeight: CGFloat {
-        if let preset = config.selectedSocialPreset {
-            return CGFloat(preset.height)
-        }
-        return referenceImage.size.height + config.padding * 2
-    }
-
-    // MARK: - Background View
-
-    @ViewBuilder
-    private var backgroundView: some View {
-        Group {
-            switch config.backgroundType {
-            case .transparent:
-                if isRendering {
-                    Color.clear
-                } else {
-                    CheckerboardView()
-                }
-
-            case .color:
-                colorBackground
-
-            case .image:
-                imageBackground
-
-            case .gradient:
-                gradientBackground
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var gradientBackground: some View {
-        config.gradientConfig.gradientView(size: CGSize(width: totalWidth, height: totalHeight), isRendering: isRendering)
-    }
-
-    @ViewBuilder
-    private var colorBackground: some View {
-        Group {
-            if let magic = config.selectedMagicPreset {
-                magicGradient(magic)
-            } else {
-                config.customColor
-            }
-        }
-        .colorAdjustments(
-            saturation: isRendering ? 1.0 : config.gradientConfig.saturation / 100,
-            brightness: isRendering ? 0.0 : (config.gradientConfig.brightness - 100) / 100
-        )
-    }
-
-    @ViewBuilder
-    private var imageBackground: some View {
-        Group {
-            if config.backgroundImageURL != nil {
-                if let preloaded = preloadedBackgroundImage {
-                    Image(nsImage: preloaded)
-                        .interpolation(.high)
-                        .antialiased(true)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: totalWidth, height: totalHeight)
-                } else if let cachedImage = loadedBackgroundImage {
-                    Image(nsImage: cachedImage)
-                        .interpolation(.high)
-                        .antialiased(true)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: totalWidth, height: totalHeight)
-                } else {
-                    colorBackground
-                }
-            } else {
-                colorBackground
-            }
-        }
-        .colorAdjustments(
-            saturation: config.gradientConfig.saturation / 100,
-            brightness: (config.gradientConfig.brightness - 100) / 100
-        )
-        .onChange(of: config.backgroundImageURL?.absoluteString) { _, newValue in
-            if let urlString = newValue, let newURL = URL(string: urlString) {
-                loadBackgroundImageAsync(from: newURL)
-            }
-        }
-        .onAppear {
-            if let url = config.backgroundImageURL, loadedBackgroundImage == nil {
-                loadBackgroundImageAsync(from: url)
-            }
-        }
-    }
-
-    private func loadBackgroundImageAsync(from url: URL) {
-        currentLoadingURL = url
-
-        Task {
-            let image = await ImageLoadingService.shared.loadImage(from: url, maxDimension: 4096)
-
-            await MainActor.run {
-                if currentLoadingURL == url {
-                    loadedBackgroundImage = image
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func magicGradient(_ magic: MagicPreset) -> some View {
-        if magic.colors.count == 1 {
-            magic.colors[0]
-        } else {
-            LinearGradient(colors: magic.colors, startPoint: .topLeading, endPoint: .bottomTrailing)
-        }
-    }
-}
-
-// MARK: - Canvas Item View
-
-/// Renders a single image item on the canvas with its own transforms and drag gesture.
-struct CanvasItemView: View {
-    let item: CanvasItem
-    let config: ScreenshotStyleConfig
-    let isSelected: Bool
-    @Binding var isDragging: Bool
-    var onOffsetChanged: ((CGSize) -> Void)? = nil
-    var onSelected: (() -> Void)? = nil
-
-    @State private var dragOffset: CGSize = .zero
-
-    private var socialPresetImageScale: CGFloat {
-        guard let preset = config.selectedSocialPreset else { return 1.0 }
-
-        let presetWidth = CGFloat(preset.width)
-        let presetHeight = CGFloat(preset.height)
-        let imageWidth = item.image.size.width + config.padding * 2
-        let imageHeight = item.image.size.height + config.padding * 2
-
-        let availableWidth = presetWidth * 0.8
-        let availableHeight = presetHeight * 0.8
-
-        let scaleX = availableWidth / imageWidth
-        let scaleY = availableHeight / imageHeight
-
-        return min(scaleX, scaleY) * (item.imageScale / 100)
-    }
-
-    var body: some View {
-        let content = Group {
-            if config.selectedSocialPreset != nil {
-                screenshotContent.scaleEffect(socialPresetImageScale)
-            } else {
-                screenshotContent.scaleEffect(item.imageScale / 100)
-            }
-        }
-
-        content
-            .rotationEffect(.degrees(item.rotation))
-            .rotation3DEffect(
-                .degrees(item.rotationX),
-                axis: (x: 1, y: 0, z: 0),
-                perspective: (item.rotationX != 0 || item.rotationY != 0) ? 1.0 : 0
-            )
-            .rotation3DEffect(
-                .degrees(item.rotationY),
-                axis: (x: 0, y: 1, z: 0),
-                perspective: (item.rotationX != 0 || item.rotationY != 0) ? 1.0 : 0
-            )
-            .animation(.spring(response: 0.3, dampingFraction: 0.75), value: item.transformHash)
-            .offset(CGSize(
-                width: item.offset.width + dragOffset.width,
-                height: item.offset.height + dragOffset.height
-            ))
-            .allowsHitTesting(isSelected)
-            .highPriorityGesture(dragGesture)
-    }
-
-    @ViewBuilder
-    private var screenshotContent: some View {
-        if item.showMockup {
-            styledScreenshot
-        } else {
-            Image(nsImage: item.image)
-                .clipShape(RoundedRectangle(cornerRadius: item.borderRadius))
-        }
-    }
-
-    @ViewBuilder
-    private var styledScreenshot: some View {
-        switch item.mockupStyle {
-        case .defaultStyle:
-            Image(nsImage: item.image)
-                .clipShape(RoundedRectangle(cornerRadius: item.borderRadius))
-        case .glassEffect:
-            glassEffectMockup
-        case .border:
-            borderMockup
-        }
-    }
-
-    private var glassEffectMockup: some View {
-        let borderWidth = item.mockupBorderSize * 3
-        let cornerRadius = item.borderRadius + borderWidth * 0.5
-
-        return Image(nsImage: item.image)
-            .clipShape(RoundedRectangle(cornerRadius: item.borderRadius))
-            .padding(borderWidth)
-            .glassEffect(.clear, in: RoundedRectangle(cornerRadius: cornerRadius))
-    }
-
-    private var borderMockup: some View {
-        let borderWidth = item.mockupBorderSize * 3
-
-        return Image(nsImage: item.image)
-            .clipShape(RoundedRectangle(cornerRadius: item.borderRadius))
-            .padding(borderWidth)
-            .background {
-                RoundedRectangle(cornerRadius: item.borderRadius + borderWidth * 0.5)
-                    .fill(item.borderColor)
-            }
-    }
-
-    private var dragGesture: some Gesture {
-        DragGesture(minimumDistance: 3)
+    private var panGesture: some Gesture {
+        DragGesture(minimumDistance: 2)
             .onChanged { value in
-                if !isDragging {
-                    onSelected?()
-                }
-                isDragging = true
-                dragOffset = value.translation
+                let start = panStart ?? model.pan
+                if panStart == nil { panStart = start }
+                model.setPan(CGSize(width: start.width + value.translation.width, height: start.height + value.translation.height))
             }
-            .onEnded { value in
-                let newOffset = CGSize(
-                    width: item.offset.width + value.translation.width,
-                    height: item.offset.height + value.translation.height
+            .onEnded { _ in
+                panStart = nil
+            }
+    }
+
+    /// Pinch to zoom, relative to the zoom at the start of the gesture, around the pinch location.
+    private var magnifyGesture: some Gesture {
+        MagnifyGesture()
+            .onChanged { value in
+                let start = magnificationStartZoom ?? model.zoom
+                if magnificationStartZoom == nil { magnificationStartZoom = start }
+                model.setZoom(start * value.magnification, anchor: value.startLocation)
+            }
+            .onEnded { _ in
+                magnificationStartZoom = nil
+            }
+    }
+}
+
+// MARK: - Canvas Stage
+
+/// The canvas itself (background + layers, clipped like the export) and the selection on top.
+private struct CanvasStage: View {
+    let model: ScreenshotEditorViewModel
+    let geometry: CanvasGeometry
+    let zoom: CGFloat
+    let canvasSize: CGSize
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            ZStack(alignment: .topLeading) {
+                CanvasBackgroundView(
+                    config: model.config,
+                    image: model.canvasBackgroundImage,
+                    size: canvasSize,
+                    scale: zoom,
+                    showsCheckerboard: true
                 )
-                onOffsetChanged?(newOffset)
-                dragOffset = .zero
-                isDragging = false
+                .allowsHitTesting(false) // clicks on the background reach the workspace
+
+                ForEach(model.items.sorted { $0.zIndex < $1.zIndex }) { item in
+                    CanvasLayer(
+                        model: model,
+                        item: item,
+                        unit: geometry.layerScale(for: item) * zoom,
+                        center: geometry.center(of: item, scale: zoom),
+                        zoom: zoom
+                    )
+                }
+            }
+            .frame(width: canvasSize.width, height: canvasSize.height)
+            .clipped()
+
+            if let selected = model.selectedItem {
+                SelectionOverlay(
+                    model: model,
+                    item: selected,
+                    unit: geometry.layerScale(for: selected) * zoom,
+                    center: geometry.center(of: selected, scale: zoom)
+                )
+            }
+        }
+        .frame(width: canvasSize.width, height: canvasSize.height)
+        .coordinateSpace(.named(ScreenshotPreviewCanvas.coordinateSpace))
+        .background {
+            // Lifts the canvas off the workspace (cheap: a shape shadow, not a shadow of the content).
+            Rectangle()
+                .fill(colorScheme == .dark ? Color.black : Color.white)
+                .shadow(color: .black.opacity(colorScheme == .dark ? 0.5 : 0.18), radius: 12, y: 3)
+                .allowsHitTesting(false) // empty canvas areas behave like the workspace
+        }
+    }
+}
+
+// MARK: - Layer
+
+/// A layer on the live canvas: click to select, drag to move.
+private struct CanvasLayer: View {
+    let model: ScreenshotEditorViewModel
+    let item: CanvasItem
+    /// Screen points per layer point.
+    let unit: CGFloat
+    let center: CGPoint
+    let zoom: CGFloat
+
+    @Environment(\.displayScale) private var displayScale
+    @State private var dragStartOffset: CGSize?
+
+    var body: some View {
+        let pixelWidth = item.image.pointSize.width * unit * displayScale
+        LayerView(item: item, image: item.image.bitmap(forDisplayPixelWidth: pixelWidth), unit: unit)
+            .gesture(dragGesture)
+            .pointerStyle(dragStartOffset == nil ? .grabIdle : .grabActive)
+            .position(center)
+            .accessibilityElement()
+            .accessibilityLabel("Screenshot")
+            .accessibilityAddTraits(model.selectedItemID == item.id ? [.isImage, .isSelected] : .isImage)
+            .accessibilityAction { model.selectedItemID = item.id }
+    }
+
+    /// Starts on mouse down (so a click selects), moves the layer while dragging, one undo step.
+    private var dragGesture: some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .named(ScreenshotPreviewCanvas.coordinateSpace))
+            .onChanged { value in
+                if dragStartOffset == nil {
+                    dragStartOffset = item.offset
+                    model.selectedItemID = item.id
+                    model.beginInteraction()
+                }
+                guard let start = dragStartOffset,
+                      abs(value.translation.width) + abs(value.translation.height) > 0 else { return }
+                model.setOffset(
+                    CGSize(width: start.width + value.translation.width / zoom, height: start.height + value.translation.height / zoom),
+                    forItem: item.id
+                )
+            }
+            .onEnded { _ in
+                dragStartOffset = nil
+                model.endInteraction()
             }
     }
 }
 
-// MARK: - Checkerboard View (GPU-accelerated)
+// MARK: - Selection
 
-/// A GPU-accelerated checkerboard pattern for transparent backgrounds.
-struct CheckerboardView: View {
-    let squareSize: CGFloat = 12
+/// Accent outline and corner handles around the selected layer (drag a handle to resize).
+private struct SelectionOverlay: View {
+    let model: ScreenshotEditorViewModel
+    let item: CanvasItem
+    let unit: CGFloat
+    let center: CGPoint
 
     var body: some View {
-        CheckerboardShaderView(squareSize: squareSize)
+        let size = CGSize(width: item.framedSize.width * unit, height: item.framedSize.height * unit)
+        let radius = item.style.outerCornerRadius * unit
+
+        ZStack(alignment: .topLeading) {
+            RoundedRectangle(cornerRadius: radius + 1, style: .continuous)
+                .stroke(Color.accentColor, lineWidth: 2)
+                .padding(-1)
+                .allowsHitTesting(false)
+
+            ForEach(HandleCorner.allCases) { corner in
+                ResizeHandle(model: model, item: item, corner: corner, layerCenter: center)
+                    .position(x: corner.x * size.width, y: corner.y * size.height)
+            }
+        }
+        .frame(width: size.width, height: size.height)
+        .modifier(LayerTransform(item: item))
+        .position(center)
     }
 }
 
-// MARK: - Pixelate View (GPU-accelerated)
+private enum HandleCorner: CaseIterable, Identifiable {
+    case topLeading, topTrailing, bottomLeading, bottomTrailing
 
-/// A GPU-accelerated pixelation effect view.
-struct PixelateView: View {
+    var id: Self { self }
+    var x: CGFloat { self == .topLeading || self == .bottomLeading ? 0 : 1 }
+    var y: CGFloat { self == .topLeading || self == .topTrailing ? 0 : 1 }
+
+    var resizePosition: FrameResizePosition {
+        switch self {
+        case .topLeading: .topLeading
+        case .topTrailing: .topTrailing
+        case .bottomLeading: .bottomLeading
+        case .bottomTrailing: .bottomTrailing
+        }
+    }
+}
+
+/// A corner handle. Resizes proportionally, from the layer's center.
+private struct ResizeHandle: View {
+    let model: ScreenshotEditorViewModel
+    let item: CanvasItem
+    let corner: HandleCorner
+    let layerCenter: CGPoint
+
+    @State private var start: (scale: Double, distance: CGFloat)?
+
     var body: some View {
-        PixelateShaderView(pixelSize: 8)
+        RoundedRectangle(cornerRadius: 2, style: .continuous)
+            .fill(Color.white)
+            .overlay(RoundedRectangle(cornerRadius: 2, style: .continuous).strokeBorder(Color.accentColor, lineWidth: 1.5))
+            .frame(width: 9, height: 9)
+            .shadow(color: .black.opacity(0.25), radius: 1, y: 0.5)
+            .frame(width: 20, height: 20)
+            .contentShape(Rectangle())
+            .pointerStyle(.frameResize(position: corner.resizePosition))
+            .gesture(resizeGesture)
+            .accessibilityHidden(true)
+    }
+
+    private var resizeGesture: some Gesture {
+        DragGesture(minimumDistance: 1, coordinateSpace: .named(ScreenshotPreviewCanvas.coordinateSpace))
+            .onChanged { value in
+                if start == nil {
+                    start = (item.scale, distance(value.startLocation))
+                    model.beginInteraction()
+                }
+                guard let start, start.distance > 1 else { return }
+                model.setScale(start.scale * Double(distance(value.location) / start.distance), forItem: item.id)
+            }
+            .onEnded { _ in
+                start = nil
+                model.endInteraction()
+            }
+    }
+
+    private func distance(_ point: CGPoint) -> CGFloat {
+        hypot(point.x - layerCenter.x, point.y - layerCenter.y)
+    }
+}
+
+// MARK: - Scroll Wheel
+
+/// Forwards scroll-wheel / trackpad scroll events over this view's frame (SwiftUI has no scroll-wheel gesture).
+/// It never takes part in hit testing, so clicks go through.
+struct ScrollWheelMonitor: NSViewRepresentable {
+    let onScroll: (NSEvent, CGPoint) -> Void
+
+    func makeNSView(context: Context) -> MonitorView {
+        let view = MonitorView()
+        view.onScroll = onScroll
+        return view
+    }
+
+    func updateNSView(_ view: MonitorView, context: Context) {
+        view.onScroll = onScroll
+    }
+
+    final class MonitorView: NSView {
+        var onScroll: ((NSEvent, CGPoint) -> Void)?
+        private var monitor: Any?
+
+        override var isFlipped: Bool { true }
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let monitor {
+                NSEvent.removeMonitor(monitor)
+                self.monitor = nil
+            }
+            guard window != nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+                // Local monitors are called on the main thread.
+                let handled = MainActor.assumeIsolated { self?.handle(event) ?? false }
+                return handled ? nil : event
+            }
+        }
+
+        /// Forwards the event if it happened over this view. Returns `true` if it was consumed.
+        private func handle(_ event: NSEvent) -> Bool {
+            guard let window, event.window === window, window.attachedSheet == nil, let onScroll else { return false }
+            let point = convert(event.locationInWindow, from: nil)
+            guard bounds.contains(point) else { return false }
+            onScroll(event, point)
+            return true
+        }
     }
 }

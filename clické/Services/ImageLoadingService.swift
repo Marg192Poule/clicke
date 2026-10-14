@@ -1,258 +1,149 @@
 import AppKit
-import AVFoundation
-import CoreImage
+import ImageIO
 
-// Note: Uses NSImage+Extensions for resizedProportionally
+// MARK: - Image Cache
 
-// MARK: - ImageLoadingService
-/// Centralized service for image loading and processing.
-/// Replaces all code duplications in the project.
-actor ImageLoadingService {
-    
-    // MARK: - Singleton
-    static let shared = ImageLoadingService()
-    
-    // MARK: - Shared Resources (GPU-accelerated)
-    /// Shared CIContext to avoid expensive re-creations
-    private let ciContext: CIContext = {
-        CIContext(options: [
-            .useSoftwareRenderer: false,
-            .cacheIntermediates: false,
-            .highQualityDownsample: true
-        ])
-    }()
-    
-    // MARK: - Image Loading
-    
-    /// Loads an image from a URL (supports HEIC, standard images and videos)
-    /// - Parameters:
-    ///   - url: File URL
-    ///   - maxDimension: Maximum dimension for resizing (nil = original size, max 4096 recommended)
-    /// - Returns: The loaded image or nil
-    func loadImage(from url: URL, maxDimension: CGFloat? = nil) async -> NSImage? {
-        let videoExtensions = ["mov", "mp4", "m4v"]
-        let isVideo = videoExtensions.contains(url.pathExtension.lowercased())
-        
-        // For videos, extract a frame
-        if isVideo {
-            let image = await extractFrameFromVideo(url: url)
-            if let maxDim = maxDimension, let img = image {
-                return resizeImage(img, maxDimension: maxDim)
-            }
-            return image
-        }
-        
-        // For images with max size, use optimized loading
-        // This avoids loading the full image into memory (prevents IOSurface errors)
-        // CGImageSource supports HEIC on macOS, so we can use the same approach
-        if let maxDim = maxDimension {
-            return loadImageWithMaxSize(from: url, maxPixelSize: maxDim)
-        }
-        
-        // Without size limit, load normally
-        return loadImageFromFile(url: url)
+/// A bounded, thread-safe cache of decoded images (backed by `NSCache`, which also evicts under memory pressure).
+nonisolated final class ImageCache: @unchecked Sendable {
+    private final class Box {
+        let image: CGImage
+        init(_ image: CGImage) { self.image = image }
     }
-    
-    /// Loads an image from a file with optimized HEIC support
-    func loadImageFromFile(url: URL) -> NSImage? {
-        let ext = url.pathExtension.lowercased()
-        
-        // For HEIC/HEIF files, use CIImage with shared context
-        if ext == "heic" || ext == "heif" {
-            return loadHEICImage(from: url)
-        }
-        
-        // For other formats, use CGImageSource (more performant)
-        return loadStandardImage(from: url)
+
+    private let cache = NSCache<NSString, Box>()
+
+    /// - Parameter totalCostLimit: Maximum decoded size kept in memory, in bytes.
+    init(totalCostLimit: Int) {
+        cache.totalCostLimit = totalCostLimit
     }
-    
-    // MARK: - Private Loading Methods
-    
-    private func loadHEICImage(from url: URL) -> NSImage? {
-        guard let ciImage = CIImage(contentsOf: url) else { return nil }
-        guard let cgImage = ciContext.createCGImage(ciImage, from: ciImage.extent) else { return nil }
-        return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
-    }
-    
-    private func loadStandardImage(from url: URL) -> NSImage? {
-        guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil) else {
-            return NSImage(contentsOf: url)
-        }
-        
-        guard let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else {
-            return NSImage(contentsOf: url)
-        }
-        
-        return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
-    }
-    
-    /// Loads an image with maximum size (avoids IOSurface errors)
-    private func loadImageWithMaxSize(from url: URL, maxPixelSize: CGFloat) -> NSImage? {
-        guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil) else {
-            return NSImage(contentsOf: url)
-        }
-        
-        // Use CGImageSource to directly create thumbnail at the right size
-        // This avoids loading the full image into memory
-        let options: [CFString: Any] = [
-            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceShouldCacheImmediately: true
-        ]
-        
-        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary) else {
-            // Fallback: load normally
-            return loadStandardImage(from: url)
-        }
-        
-        return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
-    }
-    
-    // MARK: - Video Frame Extraction
-    
-    /// Extracts a frame from a video asynchronously (non-blocking)
-    func extractFrameFromVideo(url: URL) async -> NSImage? {
-        let asset = AVURLAsset(url: url)
-        let generator = AVAssetImageGenerator(asset: asset)
-        generator.appliesPreferredTrackTransform = true
-        generator.requestedTimeToleranceAfter = .zero
-        generator.requestedTimeToleranceBefore = .zero
-        generator.maximumSize = CGSize(width: 3840, height: 2160) // 4K max
-        
-        // Try first at 1 second
-        if let image = await extractFrame(generator: generator, at: CMTime(seconds: 1, preferredTimescale: 600)) {
-            return image
-        }
-        
-        // Fallback to 0 seconds
-        return await extractFrame(generator: generator, at: .zero)
-    }
-    
-    private func extractFrame(generator: AVAssetImageGenerator, at time: CMTime) async -> NSImage? {
-        await withCheckedContinuation { continuation in
-            generator.generateCGImageAsynchronously(for: time) { cgImage, _, error in
-                if let cgImage = cgImage {
-                    let image = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
-                    continuation.resume(returning: image)
-                } else {
-                    continuation.resume(returning: nil)
-                }
+
+    subscript(key: String) -> CGImage? {
+        get { cache.object(forKey: key as NSString)?.image }
+        set {
+            if let newValue {
+                cache.setObject(Box(newValue), forKey: key as NSString, cost: newValue.bytesPerRow * newValue.height)
+            } else {
+                cache.removeObject(forKey: key as NSString)
             }
         }
     }
-    
-    // MARK: - Image Resizing (GPU-accelerated)
-    
-    /// Resizes an image while preserving proportions
-    func resizeImage(_ image: NSImage, maxDimension: CGFloat) -> NSImage? {
-        // Don't resize if already small enough
-        guard image.size.width > maxDimension || image.size.height > maxDimension else {
-            return image
-        }
-        
-        let aspectRatio = image.size.width / image.size.height
-        let newSize: NSSize
-        
-        if aspectRatio > 1 {
-            newSize = NSSize(width: maxDimension, height: maxDimension / aspectRatio)
-        } else {
-            newSize = NSSize(width: maxDimension * aspectRatio, height: maxDimension)
-        }
-        
-        // Use CGContext for GPU-accelerated resizing
-        guard let tiffData = image.tiffRepresentation,
-              let bitmapRep = NSBitmapImageRep(data: tiffData),
-              let cgImage = bitmapRep.cgImage else {
-            return resizeImageFallback(image, to: newSize)
-        }
-        
-        guard let context = CGContext(
-            data: nil,
-            width: Int(newSize.width),
-            height: Int(newSize.height),
-            bitsPerComponent: 8,
-            bytesPerRow: 0,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else {
-            return resizeImageFallback(image, to: newSize)
-        }
-        
-        context.interpolationQuality = .high
-        context.draw(cgImage, in: CGRect(origin: .zero, size: newSize))
-        
-        guard let resizedCGImage = context.makeImage() else {
-            return resizeImageFallback(image, to: newSize)
-        }
-        
-        return NSImage(cgImage: resizedCGImage, size: newSize)
-    }
-    
-    /// Fallback for resizing if GPU unavailable
-    private func resizeImageFallback(_ image: NSImage, to newSize: NSSize) -> NSImage {
-        let newImage = NSImage(size: newSize)
-        newImage.lockFocus()
-        NSGraphicsContext.current?.imageInterpolation = .high
-        image.draw(in: NSRect(origin: .zero, size: newSize),
-                   from: NSRect(origin: .zero, size: image.size),
-                   operation: .copy,
-                   fraction: 1.0)
-        newImage.unlockFocus()
-        return newImage
-    }
-    
 }
 
-// MARK: - Synchronous Wrapper for Compatibility
-/// Wrapper to allow synchronous calls from non-async contexts
-extension ImageLoadingService {
-    
-    /// Loads an image synchronously (for compatibility with existing code)
-    /// ⚠️ Prefer async version when possible
-    nonisolated func loadImageSync(from url: URL, maxDimension: CGFloat? = nil) -> NSImage? {
-        let semaphore = DispatchSemaphore(value: 0)
-        var result: NSImage?
-        
-        Task {
-            result = await loadImage(from: url, maxDimension: maxDimension)
-            semaphore.signal()
-        }
-        
-        semaphore.wait()
-        return result
+// MARK: - Image Loading Service
+
+/// Decodes and downsamples images with ImageIO / Core Graphics.
+///
+/// Everything heavy is `@concurrent`, so it never runs on the main actor. ImageIO decodes
+/// JPEG and HEIC straight to the requested size, which is much faster (and lighter) than
+/// decoding the full image and resizing it.
+nonisolated enum ImageLoadingService {
+    /// Decoded background images at the sizes the editor asked for (canvas previews, exports).
+    static let cache = ImageCache(totalCostLimit: 192 * 1024 * 1024)
+
+    // MARK: Metadata
+
+    /// Pixel size of an image file, read from its header (no decoding). Accounts for EXIF orientation.
+    static func pixelSize(of url: URL) -> CGSize? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        return pixelSize(of: source)
     }
-    
-    /// Creates an optimized thumbnail (nonisolated for synchronous access)
-    nonisolated func createThumbnail(from image: NSImage, maxSize: NSSize = NSSize(width: 400, height: 300)) -> NSImage {
-        // Proportional resize calculation
-        let aspectRatio = image.size.width / image.size.height
-        var newSize: NSSize
-        
-        if aspectRatio > 1 {
-            newSize = NSSize(width: maxSize.width, height: maxSize.width / aspectRatio)
-        } else {
-            newSize = NSSize(width: maxSize.height * aspectRatio, height: maxSize.height)
+
+    private static func pixelSize(of source: CGImageSource) -> CGSize? {
+        guard let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int else { return nil }
+        // Orientations 5–8 swap width and height.
+        if let orientation = properties[kCGImagePropertyOrientation] as? Int, orientation >= 5 {
+            return CGSize(width: height, height: width)
         }
-        
-        // Ensure we don't exceed limits
-        if newSize.width > maxSize.width {
-            newSize.width = maxSize.width
-            newSize.height = maxSize.width / aspectRatio
+        return CGSize(width: width, height: height)
+    }
+
+    // MARK: Loading
+
+    /// Decodes an image file so that its longest side is at most `maxPixelSize` (`nil` = full size).
+    @concurrent
+    static func loadImage(at url: URL, maxPixelSize: Int? = nil) async -> CGImage? {
+        loadImageSync(at: url, maxPixelSize: maxPixelSize)
+    }
+
+    /// Decodes an image just large enough to cover `targetSize` pixels aspect-fill (cached).
+    /// The requested size is rounded up to a 256 px step so small size changes reuse the cache.
+    @concurrent
+    static func cachedImage(at url: URL, covering targetSize: CGSize) async -> CGImage? {
+        cachedImageSync(at: url, covering: targetSize)
+    }
+
+    /// Synchronous variant of `cachedImage(at:covering:)`.
+    static func cachedImageSync(at url: URL, covering targetSize: CGSize) -> CGImage? {
+        let sourceSize = pixelSize(of: url) ?? targetSize
+        let needed = coverPixelSize(source: sourceSize, target: targetSize)
+        let nativeMax = Int(max(sourceSize.width, sourceSize.height))
+        let step = 256
+        let bucket = min(((needed + step - 1) / step) * step, nativeMax)
+        let key = "\(url.path)#\(bucket)"
+        if let cached = cache[key] { return cached }
+        let image = loadImageSync(at: url, maxPixelSize: bucket)
+        if let image { cache[key] = image }
+        return image
+    }
+
+    /// Synchronous decoding. Only call it off the main actor, or for a small image.
+    static func loadImageSync(at url: URL, maxPixelSize: Int? = nil) -> CGImage? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary) else {
+            return nil
         }
-        if newSize.height > maxSize.height {
-            newSize.height = maxSize.height
-            newSize.width = maxSize.height * aspectRatio
-        }
-        
-        let newImage = NSImage(size: newSize)
-        newImage.lockFocus()
-        NSGraphicsContext.current?.imageInterpolation = .high
-        image.draw(in: NSRect(origin: .zero, size: newSize),
-                   from: NSRect(origin: .zero, size: image.size),
-                   operation: .copy,
-                   fraction: 1.0)
-        newImage.unlockFocus()
-        return newImage
+        let nativeSize = pixelSize(of: source) ?? CGSize(width: 16_384, height: 16_384)
+        let nativeMax = Int(max(nativeSize.width, nativeSize.height))
+        let target = min(maxPixelSize ?? nativeMax, nativeMax)
+
+        // The thumbnail API applies the EXIF orientation and decodes at the target size directly.
+        let options: [CFString: Any] = [
+            kCGImageSourceThumbnailMaxPixelSize: max(target, 1),
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+        ]
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+            ?? CGImageSourceCreateImageAtIndex(source, 0, nil)
+    }
+
+    /// The `maxPixelSize` to request so that an image of `sourceSize` pixels covers `targetSize`
+    /// pixels when drawn aspect-fill (the background behaviour).
+    static func coverPixelSize(source sourceSize: CGSize, target targetSize: CGSize) -> Int {
+        guard sourceSize.width > 0, sourceSize.height > 0 else { return Int(max(targetSize.width, targetSize.height)) }
+        let scale = max(targetSize.width / sourceSize.width, targetSize.height / sourceSize.height)
+        return Int((max(sourceSize.width, sourceSize.height) * min(scale, 1)).rounded(.up))
+    }
+
+    // MARK: Resizing
+
+    /// Returns a copy of `image` whose longest side is at most `maxPixelSize` (or `image` itself if already smaller).
+    @concurrent
+    static func downsample(_ image: CGImage, maxPixelSize: Int) async -> CGImage {
+        downsampleSync(image, maxPixelSize: maxPixelSize)
+    }
+
+    static func downsampleSync(_ image: CGImage, maxPixelSize: Int) -> CGImage {
+        let longest = max(image.width, image.height)
+        guard longest > maxPixelSize, maxPixelSize > 0 else { return image }
+        let factor = CGFloat(maxPixelSize) / CGFloat(longest)
+        let width = max(1, Int((CGFloat(image.width) * factor).rounded()))
+        let height = max(1, Int((CGFloat(image.height) * factor).rounded()))
+
+        let colorSpace = image.colorSpace.flatMap { $0.model == .rgb ? $0 : nil } ?? CGColorSpace(name: CGColorSpace.sRGB)!
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return image }
+
+        context.interpolationQuality = .high
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return context.makeImage() ?? image
     }
 }
