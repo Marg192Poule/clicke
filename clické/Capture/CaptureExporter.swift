@@ -8,26 +8,21 @@ nonisolated private let logger = Logger(subsystem: Bundle.main.bundleIdentifier 
 
 /// Copies captures to the clipboard and writes them to disk.
 enum CaptureExporter {
-    /// Puts the capture on the general pasteboard as PNG (preferred, compact) and TIFF (for apps
-    /// that only read TIFF). Both keep transparency and the Retina point size.
-    static func copyToPasteboard(_ capture: ScreenCapture) async {
-        let tiffData = await CaptureImageIO.tiffData(
-            for: SendableImage(cgImage: capture.cgImage),
-            pointSize: capture.image.size
-        )
+    /// The "Couldn’t Save" alert for the default folder is shown once per session (later failures
+    /// show a toast), so a broken folder doesn't interrupt every capture.
+    private static var hasPresentedFolderSaveAlert = false
 
-        let item = NSPasteboardItem()
-        item.setData(capture.pngData, forType: .png)
-        if let tiffData {
-            item.setData(tiffData, forType: .tiff)
-        }
+    // MARK: Clipboard
 
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        if !pasteboard.writeObjects([item]) {
-            logger.error("Couldn't write the capture to the pasteboard")
-        }
+    /// Puts the capture's PNG on the general pasteboard. TIFF, for the few apps that only read it,
+    /// is only promised and encoded if an app asks for it (see `PasteboardWriter`).
+    /// - Returns: `false` if the pasteboard refused the data.
+    @discardableResult
+    static func copyToPasteboard(_ capture: ScreenCapture) -> Bool {
+        PasteboardWriter.writePNG(capture.pngData)
     }
+
+    // MARK: Saving
 
     /// Saves the capture in `folder` under its default name, never overwriting an existing file
     /// ("Clické … (2).png", "… (3).png", …). Creates the folder if needed.
@@ -36,11 +31,27 @@ enum CaptureExporter {
         try await writeUniqueFile(capture.pngData, baseName: capture.baseFileName, in: folder)
     }
 
+    /// Saves the capture in the folder chosen in Settings and confirms it with a toast
+    /// (preview menu's "Save to “Desktop”").
+    /// - Returns: `true` once saved.
+    static func saveToDefaultFolder(_ capture: ScreenCapture) async -> Bool {
+        let folder = AppSettings.current.saveDirectoryURL
+        do {
+            _ = try await autoSave(capture, in: folder)
+            ToastManager.shared.show(message: savedMessage(folder: folder), icon: "checkmark.circle.fill", success: true)
+            return true
+        } catch {
+            logger.error("Couldn't save the capture: \(error.localizedDescription, privacy: .private)")
+            presentFolderSaveFailure(folder: folder)
+            return false
+        }
+    }
+
     /// Asks where to save the capture (default name and folder from Settings), then writes it.
     /// - Parameter completion: Called with `true` once saved, `false` if cancelled or failed.
     static func presentSavePanel(for capture: ScreenCapture, completion: @escaping (Bool) -> Void) {
         let panel = NSSavePanel()
-        panel.title = String(localized: "Save Capture")
+        panel.title = String(localized: "Save Screenshot")
         panel.nameFieldStringValue = capture.fileName
         panel.allowedContentTypes = [.png]
         panel.canCreateDirectories = true
@@ -54,23 +65,62 @@ enum CaptureExporter {
             }
             do {
                 try capture.pngData.write(to: url, options: .atomic)
-                ToastManager.shared.show(message: String(localized: "Saved"), icon: "checkmark.circle.fill", success: true)
+                ToastManager.shared.show(
+                    message: savedMessage(folder: url.deletingLastPathComponent()),
+                    icon: "checkmark.circle.fill",
+                    success: true
+                )
                 completion(true)
             } catch {
                 logger.error("Couldn't save the capture: \(error.localizedDescription, privacy: .private)")
-                presentSaveError()
+                ToastManager.shared.show(
+                    message: String(localized: "Couldn’t Save the Screenshot"),
+                    icon: "exclamationmark.triangle.fill",
+                    success: false
+                )
                 completion(false)
             }
         }
     }
 
-    /// Reports a failed save with a toast.
-    static func presentSaveError() {
-        ToastManager.shared.show(
-            message: String(localized: "Couldn't Save the Capture"),
-            icon: "exclamationmark.triangle.fill",
-            success: false
-        )
+    /// Reports that saving to the Settings folder failed: an alert offering to choose another folder
+    /// the first time in the session, a toast afterwards.
+    static func presentFolderSaveFailure(folder: URL) {
+        guard !hasPresentedFolderSaveAlert else {
+            ToastManager.shared.show(
+                message: String(localized: "Couldn’t Save the Screenshot"),
+                icon: "exclamationmark.triangle.fill",
+                success: false
+            )
+            return
+        }
+        hasPresentedFolderSaveAlert = true
+
+        let folderName = displayName(of: folder)
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = String(localized: "Couldn’t Save the Screenshot")
+        alert.informativeText = String(localized: "Clické couldn’t save to “\(folderName)”. The folder may have been moved, or Clické may not have permission to write to it.")
+        alert.addButton(withTitle: String(localized: "Choose Folder…"))
+        alert.addButton(withTitle: String(localized: "OK"))
+
+        ModalAlert.present(alert) { response in
+            if response == .alertFirstButtonReturn {
+                SettingsWindowController.shared.show(tab: .capture)
+            }
+        }
+    }
+
+    // MARK: Messages
+
+    /// The folder's name as Finder shows it ("Desktop", localized).
+    static func displayName(of folder: URL) -> String {
+        FileManager.default.displayName(atPath: folder.path)
+    }
+
+    /// "Saved to “Desktop”".
+    static func savedMessage(folder: URL) -> String {
+        String(localized: "Saved to “\(displayName(of: folder))”", comment: "Toast after saving a screenshot: folder name")
     }
 
     // MARK: Private

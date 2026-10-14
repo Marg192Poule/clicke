@@ -13,12 +13,15 @@ protocol CapturePreviewViewDelegate: AnyObject {
     func previewViewFileForDragging(_ view: CapturePreviewView) -> URL?
     func previewViewDidBeginDragging(_ view: CapturePreviewView)
     func previewView(_ view: CapturePreviewView, draggingDidEndWith operation: NSDragOperation)
+    /// The context menu shown on right-click or Control-click.
+    func previewViewContextMenu(_ view: CapturePreviewView) -> NSMenu?
 }
 
 // MARK: - Capture Preview View
 
 /// A Liquid Glass card showing a capture thumbnail. Hovering reveals quick actions (Edit, Copy,
-/// Save…, Close); clicking the thumbnail opens the editor, dragging it drops a PNG file.
+/// Save…, Close); clicking the thumbnail opens the editor, dragging it drops a PNG file, and
+/// right-clicking shows the same commands as the macOS screenshot thumbnail.
 final class CapturePreviewView: NSView {
     private enum Metrics {
         static let maxImageSize = CGSize(width: 224, height: 150)
@@ -56,10 +59,10 @@ final class CapturePreviewView: NSView {
     }
 
     init(capture: ScreenCapture) {
-        let cardSize = Self.cardSize(for: capture.image.size)
+        let cardSize = Self.cardSize(for: capture.pointSize)
         thumbnailView = CaptureThumbnailView(
             image: capture.thumbnail,
-            imageSize: Self.imageSize(for: capture.image.size),
+            imageSize: Self.imageSize(for: capture.pointSize),
             pngData: capture.pngData
         )
         closeButton = PreviewButton()
@@ -68,7 +71,7 @@ final class CapturePreviewView: NSView {
 
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
-        setAccessibilityLabel(String(localized: "Capture Preview"))
+        setAccessibilityLabel(String(localized: "Screenshot preview"))
 
         buildHierarchy()
         setControlsVisible(false, animated: false)
@@ -139,6 +142,12 @@ final class CapturePreviewView: NSView {
             button.widthAnchor.constraint(equalTo: actionStack.widthAnchor).isActive = true
         }
         content.addSubview(actionStack)
+
+        // Right-click anywhere on the card (the thumbnail handles its own Control-click).
+        thumbnailView.contextMenuProvider = { [weak self] in
+            guard let self else { return nil }
+            return delegate?.previewViewContextMenu(self)
+        }
 
         NSLayoutConstraint.activate([
             closeButton.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: Metrics.controlInset),
@@ -231,6 +240,12 @@ final class CapturePreviewView: NSView {
     @objc private func closeClicked() {
         delegate?.previewViewDidRequestClose(self)
     }
+
+    // MARK: Context Menu
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        delegate?.previewViewContextMenu(self)
+    }
 }
 
 // MARK: - Thumbnail View
@@ -242,6 +257,7 @@ private final class CaptureThumbnailView: NSView, NSDraggingSource {
     var fileForDragging: (() -> URL?)?
     var onDragBegan: (() -> Void)?
     var onDragEnded: ((NSDragOperation) -> Void)?
+    var contextMenuProvider: (() -> NSMenu?)?
 
     private let image: CGImage
     private let imageSize: CGSize
@@ -273,8 +289,8 @@ private final class CaptureThumbnailView: NSView, NSDraggingSource {
 
         setAccessibilityElement(true)
         setAccessibilityRole(.image)
-        setAccessibilityLabel(String(localized: "Capture"))
-        setAccessibilityHelp(String(localized: "Click to edit the capture, or drag it into another app."))
+        setAccessibilityLabel(String(localized: "Screenshot"))
+        setAccessibilityHelp(String(localized: "Click to edit the screenshot, or drag it into another app."))
     }
 
     @available(*, unavailable)
@@ -329,7 +345,17 @@ private final class CaptureThumbnailView: NSView, NSDraggingSource {
     override var mouseDownCanMoveWindow: Bool { false }
 
     override func mouseDown(with event: NSEvent) {
+        // Control-click shows the context menu, like a right-click.
+        if event.modifierFlags.contains(.control), let menu = contextMenuProvider?() {
+            mouseDownEvent = nil
+            NSMenu.popUpContextMenu(menu, with: event, for: self)
+            return
+        }
         mouseDownEvent = event
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        contextMenuProvider?()
     }
 
     override func mouseDragged(with event: NSEvent) {

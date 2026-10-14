@@ -33,19 +33,14 @@ final class CapturePreviewController {
         let preview = CapturePreview(capture: capture, displayID: displayID, controller: self)
         previews.append(preview)
 
-        // Keep the stack short: the oldest previews on this screen make room.
-        let sameScreen = previews.filter { $0.displayID == displayID }
-        for old in sameScreen.dropLast(Self.maximumPerScreen) {
-            dismiss(old)
-        }
-
+        trimStack(displayID: displayID)
         layout(displayID: displayID, appearing: preview)
 
         NSAccessibility.post(
             element: NSApp as Any,
             notification: .announcementRequested,
             userInfo: [
-                .announcement: String(localized: "Capture ready. Preview in the bottom-right corner of the screen."),
+                .announcement: String(localized: "Screenshot taken. A preview is in the bottom-right corner of the screen."),
                 .priority: NSAccessibilityPriorityLevel.high.rawValue
             ]
         )
@@ -57,6 +52,25 @@ final class CapturePreviewController {
         previews.remove(at: index)
         preview.animateOut()
         layout(displayID: preview.displayID, appearing: nil)
+    }
+
+    /// A preview finished a drag or closed its Save panel: the stack can be trimmed again.
+    func previewDidBecomeIdle(_ preview: CapturePreview) {
+        trimStack(displayID: preview.displayID)
+    }
+
+    /// Keeps the stack short: the oldest previews on the screen make room, except the ones in use
+    /// (being dragged, or with a Save panel open). Those are trimmed once they're idle again.
+    private func trimStack(displayID: CGDirectDisplayID) {
+        let sameScreen = previews.filter { $0.displayID == displayID }
+        var excess = sameScreen.count - Self.maximumPerScreen
+        guard excess > 0 else { return }
+
+        let removable = sameScreen.filter { !$0.isBusy }.prefix(excess)
+        for old in removable {
+            dismiss(old)
+            excess -= 1
+        }
     }
 
     // MARK: Layout
@@ -98,8 +112,8 @@ final class CapturePreviewController {
 
 // MARK: - Capture Preview
 
-/// One preview panel: owns its window, auto-dismiss timer and quick actions.
-final class CapturePreview: NSObject, CapturePreviewViewDelegate {
+/// One preview panel: owns its window, auto-dismiss timer, quick actions and context menu.
+final class CapturePreview: NSObject, CapturePreviewViewDelegate, NSMenuDelegate {
     private static let displayDuration: Duration = .seconds(6)
     private static let minimumRemainingDuration: Duration = .seconds(2)
 
@@ -113,9 +127,13 @@ final class CapturePreview: NSObject, CapturePreviewViewDelegate {
     private var remainingDuration = CapturePreview.displayDuration
     private var timerStart: ContinuousClock.Instant?
     private var isHovered = false
-    /// Dragging or saving: the preview must stay until the operation ends.
-    private var isBusy = false
     private var isDismissed = false
+
+    /// Operations that need the preview to stay (drag, Save panel, context menu).
+    private var busyCount = 0
+
+    /// Dragging, saving or showing its menu: the preview must stay until the operation ends.
+    var isBusy: Bool { busyCount > 0 }
 
     var size: NSSize { panel.frame.size }
 
@@ -144,7 +162,10 @@ final class CapturePreview: NSObject, CapturePreviewViewDelegate {
             panel.animator().setFrame(frame, display: true)
             panel.animator().alphaValue = 1
         } completionHandler: { [weak self] in
-            self?.previewView.refreshHoverState()
+            // AppKit calls completion handlers on the main thread.
+            MainActor.assumeIsolated {
+                self?.previewView.refreshHoverState()
+            }
         }
         startTimer()
     }
@@ -174,14 +195,37 @@ final class CapturePreview: NSObject, CapturePreviewViewDelegate {
             }
             panel.animator().alphaValue = 0
         } completionHandler: {
-            panel.orderOut(nil)
-            panel.contentView = nil
-            panel.close()
+            // AppKit calls completion handlers on the main thread.
+            MainActor.assumeIsolated {
+                panel.orderOut(nil)
+                panel.contentView = nil
+                panel.close()
+            }
         }
     }
 
     private func dismiss() {
         controller?.dismiss(self)
+    }
+
+    // MARK: Busy State
+
+    private func beginBusy() {
+        busyCount += 1
+        pauseTimer()
+    }
+
+    /// - Parameter dismissing: The operation completed the preview's job (it's closed right away).
+    private func endBusy(dismissing: Bool) {
+        guard busyCount > 0 else { return }
+        busyCount -= 1
+        guard !isBusy, !isDismissed else { return }
+        if dismissing {
+            dismiss()
+        } else {
+            startTimer()
+            controller?.previewDidBecomeIdle(self)
+        }
     }
 
     // MARK: Auto-dismiss
@@ -209,37 +253,66 @@ final class CapturePreview: NSObject, CapturePreviewViewDelegate {
         timerStart = nil
     }
 
-    // MARK: CapturePreviewViewDelegate
+    // MARK: Actions
 
-    func previewViewDidRequestEdit(_ view: CapturePreviewView) {
+    private func edit() {
         dismiss()
-        ScreenshotEditorWindow.shared.show(with: capture.image)
+        guard let image = capture.makeImage() else {
+            ToastManager.shared.show(
+                message: String(localized: "Couldn’t Open the Screenshot"),
+                icon: "exclamationmark.triangle.fill",
+                success: false
+            )
+            return
+        }
+        ScreenshotEditorWindow.shared.show(with: image)
     }
 
-    func previewViewDidRequestCopy(_ view: CapturePreviewView) {
+    private func copyToClipboard() {
         dismiss()
-        let capture = capture
-        Task {
-            await CaptureExporter.copyToPasteboard(capture)
+        if CaptureExporter.copyToPasteboard(capture) {
             ToastManager.shared.show(message: String(localized: "Copied to Clipboard"), icon: "doc.on.clipboard.fill", success: true)
+        } else {
+            ToastManager.shared.show(
+                message: String(localized: "Couldn’t Copy the Screenshot"),
+                icon: "exclamationmark.triangle.fill",
+                success: false
+            )
         }
     }
 
-    func previewViewDidRequestSave(_ view: CapturePreviewView) {
-        isBusy = true
-        pauseTimer()
+    private func presentSavePanel() {
+        beginBusy()
         // Let the Save panel cover the preview.
         panel.level = .normal
         CaptureExporter.presentSavePanel(for: capture) { [weak self] saved in
             guard let self else { return }
-            isBusy = false
             panel.level = .floating
-            if saved {
-                dismiss()
-            } else {
-                startTimer()
-            }
+            endBusy(dismissing: saved)
         }
+    }
+
+    private func saveToDefaultFolder() {
+        beginBusy()
+        let capture = capture
+        Task { [weak self] in
+            let saved = await CaptureExporter.saveToDefaultFolder(capture)
+            self?.endBusy(dismissing: saved)
+        }
+    }
+
+    // MARK: CapturePreviewViewDelegate
+
+    func previewViewDidRequestEdit(_ view: CapturePreviewView) {
+        edit()
+    }
+
+    func previewViewDidRequestCopy(_ view: CapturePreviewView) {
+        copyToClipboard()
+    }
+
+    func previewViewDidRequestSave(_ view: CapturePreviewView) {
+        presentSavePanel()
     }
 
     func previewViewDidRequestClose(_ view: CapturePreviewView) {
@@ -265,18 +338,68 @@ final class CapturePreview: NSObject, CapturePreviewViewDelegate {
     }
 
     func previewViewDidBeginDragging(_ view: CapturePreviewView) {
-        isBusy = true
-        pauseTimer()
+        beginBusy()
     }
 
     func previewView(_ view: CapturePreviewView, draggingDidEndWith operation: NSDragOperation) {
-        isBusy = false
-        if operation.isEmpty {
-            startTimer()
-        } else {
-            // Dropped somewhere: the preview has done its job (same as the macOS thumbnail).
-            dismiss()
-        }
+        // Dropped somewhere: the preview has done its job (same as the macOS thumbnail).
+        endBusy(dismissing: !operation.isEmpty)
+    }
+
+    func previewViewContextMenu(_ view: CapturePreviewView) -> NSMenu? {
+        guard !isDismissed else { return nil }
+        let folderName = CaptureExporter.displayName(of: AppSettings.current.saveDirectoryURL)
+
+        let menu = NSMenu()
+        menu.delegate = self
+        menu.addItem(makeMenuItem(String(localized: "Edit"), action: #selector(editFromMenu(_:))))
+        menu.addItem(makeMenuItem(String(localized: "Copy"), action: #selector(copyFromMenu(_:))))
+        menu.addItem(makeMenuItem(String(localized: "Save…"), action: #selector(saveFromMenu(_:))))
+        menu.addItem(makeMenuItem(
+            String(localized: "Save to “\(folderName)”", comment: "Preview menu: save to the folder chosen in Settings"),
+            action: #selector(saveToFolderFromMenu(_:))
+        ))
+        menu.addItem(.separator())
+        menu.addItem(makeMenuItem(String(localized: "Close"), action: #selector(closeFromMenu(_:))))
+        return menu
+    }
+
+    private func makeMenuItem(_ title: String, action: Selector) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        item.target = self
+        return item
+    }
+
+    // MARK: Context Menu
+
+    // The menu's action runs after `menuDidClose(_:)`, so the preview stays put while it's open.
+
+    func menuWillOpen(_ menu: NSMenu) {
+        beginBusy()
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        endBusy(dismissing: false)
+    }
+
+    @objc private func editFromMenu(_ sender: NSMenuItem) {
+        edit()
+    }
+
+    @objc private func copyFromMenu(_ sender: NSMenuItem) {
+        copyToClipboard()
+    }
+
+    @objc private func saveFromMenu(_ sender: NSMenuItem) {
+        presentSavePanel()
+    }
+
+    @objc private func saveToFolderFromMenu(_ sender: NSMenuItem) {
+        saveToDefaultFolder()
+    }
+
+    @objc private func closeFromMenu(_ sender: NSMenuItem) {
+        dismiss()
     }
 }
 
@@ -304,7 +427,7 @@ final class CapturePreviewPanel: NSPanel {
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         // Keep the preview out of later captures.
         sharingType = .none
-        setAccessibilityLabel(String(localized: "Capture Preview"))
+        setAccessibilityLabel(String(localized: "Screenshot preview"))
     }
 
     override var canBecomeKey: Bool { false }

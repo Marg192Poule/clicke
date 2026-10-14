@@ -1,7 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// Shows short HUD messages ("Copied", "Saved", errors…) at the top of the screen under the pointer.
+/// Shows short HUD messages ("Copied to Clipboard", "Saved to “Desktop”", errors…) at the top of
+/// the screen under the pointer. Errors stay longer than confirmations, so they can be read.
 ///
 /// There's a single shared HUD: a new message replaces the current one instead of stacking.
 /// The HUD never takes focus nor intercepts clicks.
@@ -15,7 +16,8 @@ final class ToastManager {
 
     // MARK: - Properties
 
-    private static let displayDuration: Duration = .seconds(1.6)
+    private static let successDuration: Duration = .seconds(1.6)
+    private static let errorDuration: Duration = .seconds(4)
     private static let topMargin: CGFloat = 12
 
     private var panel: NSPanel?
@@ -80,9 +82,10 @@ final class ToastManager {
         )
 
         let token = generation
+        let duration = success ? Self.successDuration : Self.errorDuration
         dismissTask?.cancel()
         dismissTask = Task { [weak self] in
-            try? await Task.sleep(for: Self.displayDuration)
+            try? await Task.sleep(for: duration)
             guard !Task.isCancelled else { return }
             self?.fadeOut(token: token)
         }
@@ -97,9 +100,12 @@ final class ToastManager {
             context.timingFunction = CAMediaTimingFunction(name: .easeIn)
             panel.animator().alphaValue = 0
         } completionHandler: { [weak self] in
-            // A newer toast may have appeared during the fade: keep it on screen.
-            guard let self, token == generation else { return }
-            panel.orderOut(nil)
+            // AppKit calls completion handlers on the main thread.
+            MainActor.assumeIsolated {
+                // A newer toast may have appeared during the fade: keep it on screen.
+                guard let self, token == self.generation else { return }
+                panel.orderOut(nil)
+            }
         }
     }
 
