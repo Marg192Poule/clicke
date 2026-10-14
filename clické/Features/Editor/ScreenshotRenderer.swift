@@ -17,6 +17,12 @@ enum ScreenshotRenderer {
         let pixelDensity: CGFloat
     }
 
+    nonisolated enum RenderError: LocalizedError {
+        case failed
+
+        var errorDescription: String? { String(localized: "The image couldn’t be rendered.") }
+    }
+
     // MARK: Rendering
 
     /// Full-resolution export. Decodes the background off the main actor, then renders.
@@ -131,21 +137,5 @@ enum ScreenshotRenderer {
     static func write(_ output: Output, to url: URL, format: ExportFormat, jpegQuality: Double) async throws {
         let data = try ImageEncoder.data(for: output.image, format: format, jpegQuality: jpegQuality, pixelDensity: output.pixelDensity)
         try data.write(to: url, options: .atomic)
-    }
-
-    /// Synchronous variant, for the rare drag that starts before its file is ready.
-    static func writeSync(_ output: Output, to url: URL, format: ExportFormat, jpegQuality: Double) throws {
-        let data = try ImageEncoder.data(for: output.image, format: format, jpegQuality: jpegQuality, pixelDensity: output.pixelDensity)
-        try data.write(to: url, options: .atomic)
-    }
-
-    // MARK: File Names
-
-    /// "Clické 2026-10-14 at 11.32.05.png", the same pattern as captures.
-    static func defaultFileName(for format: ExportFormat, date: Date = .now) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
-        return "Clické \(formatter.string(from: date)).\(format.fileExtension)"
     }
 }

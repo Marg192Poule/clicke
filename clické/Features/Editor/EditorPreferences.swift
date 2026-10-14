@@ -25,7 +25,7 @@ enum EditorPreferences {
         do {
             return try JSONDecoder().decode(SavedStyle.self, from: data)
         } catch {
-            Logger.editor.error("Couldn't read the saved editor style: \(error.localizedDescription)")
+            Logger.editor.error("Couldn't read the saved editor style: \(error.localizedDescription, privacy: .private)")
             return nil
         }
     }
@@ -34,7 +34,7 @@ enum EditorPreferences {
         do {
             defaults.set(try JSONEncoder().encode(style), forKey: styleKey)
         } catch {
-            Logger.editor.error("Couldn't save the editor style: \(error.localizedDescription)")
+            Logger.editor.error("Couldn't save the editor style: \(error.localizedDescription, privacy: .private)")
         }
     }
 

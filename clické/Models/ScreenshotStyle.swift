@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 // MARK: - RGBA Color
 
@@ -497,6 +498,13 @@ nonisolated enum ExportFormat: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .png: "png"
         case .jpeg: "jpg"
+        }
+    }
+
+    var contentType: UTType {
+        switch self {
+        case .png: .png
+        case .jpeg: .jpeg
         }
     }
 }

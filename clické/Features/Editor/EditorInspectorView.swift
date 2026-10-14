@@ -54,10 +54,7 @@ private struct ExportFooter: View {
                     } preview: {
                         thumbnail.frame(width: 160, height: 110)
                     }
-                    .onHover { hovering in
-                        isHovering = hovering
-                        if hovering { model.prepareDragExport() }
-                    }
+                    .onHover { isHovering = $0 }
                     .pointerStyle(.grabIdle)
                     .help("Drag the image to Finder, Mail, Messages or any other app.")
                     .accessibilityLabel("Exported image")

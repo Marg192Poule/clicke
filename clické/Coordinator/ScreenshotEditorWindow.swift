@@ -29,13 +29,16 @@ final class ScreenshotEditorWindow: NSObject, NSWindowDelegate {
     func show(with images: [NSImage]) {
         guard !images.isEmpty else { return }
 
-        if let window, let model {
-            images.forEach { model.addImage($0) }
-            window.makeKeyAndOrderFront(nil)
-            NSApp.activate()
+        if let model {
+            model.addImages(images)
+            bringToFront()
             return
         }
-        createWindow(with: images)
+
+        // Images that can't be edited are reported by the model; don't open an empty editor.
+        let model = ScreenshotEditorViewModel(images: images)
+        guard model.hasContent else { return }
+        createWindow(with: model)
     }
 
     /// Closes the editor window.
@@ -63,9 +66,7 @@ final class ScreenshotEditorWindow: NSObject, NSWindowDelegate {
 
     // MARK: - Window
 
-    private func createWindow(with images: [NSImage]) {
-        let model = ScreenshotEditorViewModel(images: images)
-
+    private func createWindow(with model: ScreenshotEditorViewModel) {
         let window = EditorWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
