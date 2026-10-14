@@ -34,6 +34,20 @@ enum ScreenRecordingPermission {
         }
     }
 
+    private static let askedKey = "ScreenRecordingAccessRequested"
+
+    /// The single entry point for asking for Screen Recording access (used by captures and Settings).
+    /// The first time, only the system prompt appears; afterwards (macOS never re-prompts), it opens
+    /// the Screen & System Audio Recording pane of System Settings.
+    static func requestAccess() {
+        let alreadyAsked = UserDefaults.standard.bool(forKey: askedKey)
+        UserDefaults.standard.set(true, forKey: askedKey)
+        let granted = CGRequestScreenCaptureAccess()
+        if !granted, alreadyAsked, let settingsURL {
+            NSWorkspace.shared.open(settingsURL)
+        }
+    }
+
     /// Registers Clické in the Screen Recording list, then opens that pane of System Settings.
     static func openSystemSettings() {
         // Adds Clické to the list (and shows the system prompt if it was never asked before).
