@@ -102,3 +102,6 @@ Temporary Items
 # Release packaging artifacts (never commit built binaries)
 dmg_temp/
 *.dmg
+
+# Claude Code local data (agent worktrees, settings)
+.claude/
