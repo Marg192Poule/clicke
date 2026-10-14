@@ -24,30 +24,43 @@ enum SliderUnit {
 
 /// A labeled slider with its value, updating the canvas live while dragging.
 /// Right-click offers "Reset" when a default value is given.
-struct InspectorSlider: View {
+///
+/// It takes a plain value and a setter (not a binding) and is `Equatable` on its inputs, so with
+/// `.equatable()` a slider only redraws when its own value changes: dragging one slider doesn't
+/// redraw the others. The setter must not depend on anything else that changes (give the section
+/// an `.id` when it edits a different layer).
+struct InspectorSlider: View, Equatable {
     let title: LocalizedStringKey
-    @Binding var value: Double
+    let value: Double
     let range: ClosedRange<Double>
     var step: Double?
     var unit: SliderUnit = .none
     var defaultValue: Double?
+    let onChange: (Double) -> Void
 
     @Environment(\.editorInteraction) private var interaction
 
     init(
         _ title: LocalizedStringKey,
-        value: Binding<Double>,
+        value: Double,
         in range: ClosedRange<Double>,
         step: Double? = nil,
         unit: SliderUnit = .none,
-        defaultValue: Double? = nil
+        defaultValue: Double? = nil,
+        onChange: @escaping (Double) -> Void
     ) {
         self.title = title
-        self._value = value
+        self.value = value
         self.range = range
         self.step = step
         self.unit = unit
         self.defaultValue = defaultValue
+        self.onChange = onChange
+    }
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.title == rhs.title && lhs.value == rhs.value && lhs.range == rhs.range
+            && lhs.step == rhs.step && lhs.unit == rhs.unit && lhs.defaultValue == rhs.defaultValue
     }
 
     var body: some View {
@@ -69,7 +82,7 @@ struct InspectorSlider: View {
             if let defaultValue {
                 Button("Reset") {
                     interaction.begin()
-                    value = defaultValue
+                    onChange(defaultValue)
                     interaction.end()
                 }
                 .disabled(value == defaultValue)
@@ -79,10 +92,11 @@ struct InspectorSlider: View {
 
     @ViewBuilder
     private var slider: some View {
+        let binding = Binding(get: { value }, set: onChange)
         if let step {
-            Slider(value: $value, in: range, step: step, onEditingChanged: editingChanged)
+            Slider(value: binding, in: range, step: step, onEditingChanged: editingChanged)
         } else {
-            Slider(value: $value, in: range, onEditingChanged: editingChanged)
+            Slider(value: binding, in: range, onEditingChanged: editingChanged)
         }
     }
 
@@ -102,6 +116,7 @@ struct SelectableTile<Content: View>: View {
     @ViewBuilder let content: () -> Content
 
     @State private var isHovering = false
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         Button(action: action) {
@@ -109,7 +124,7 @@ struct SelectableTile<Content: View>: View {
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
                 .overlay {
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(isHovering ? 0.35 : 0.12), lineWidth: 1)
+                        .strokeBorder(Color.primary.opacity(outlineOpacity), lineWidth: 1)
                 }
                 .padding(3)
                 .overlay {
@@ -125,6 +140,16 @@ struct SelectableTile<Content: View>: View {
         .help(title)
         .accessibilityLabel(title)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    /// Stronger with Increase Contrast, so light tiles stay distinct from the inspector.
+    private var outlineOpacity: Double {
+        switch (contrast == .increased, isHovering) {
+        case (true, true): 0.7
+        case (true, false): 0.45
+        case (false, true): 0.35
+        case (false, false): 0.12
+        }
     }
 }
 
@@ -156,12 +181,14 @@ struct ColorSwatchButton: View {
     let action: () -> Void
 
     @State private var isHovering = false
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
+        let isIncreased = contrast == .increased
         Button(action: action) {
             Circle()
                 .fill(color.color)
-                .overlay(Circle().strokeBorder(Color.primary.opacity(isHovering ? 0.4 : 0.15), lineWidth: 1))
+                .overlay(Circle().strokeBorder(Color.primary.opacity(isHovering ? (isIncreased ? 0.7 : 0.4) : (isIncreased ? 0.45 : 0.15)), lineWidth: 1))
                 .padding(3)
                 .overlay {
                     if isSelected {
@@ -173,6 +200,7 @@ struct ColorSwatchButton: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
+        .help(Text(verbatim: color.accessibilityName.prefix(1).localizedUppercase + color.accessibilityName.dropFirst()))
         .accessibilityLabel(Text("Color"))
         .accessibilityValue(Text(color.accessibilityName))
         .accessibilityAddTraits(isSelected ? .isSelected : [])

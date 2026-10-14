@@ -17,6 +17,18 @@ enum ScreenshotRenderer {
         let pixelDensity: CGFloat
     }
 
+    nonisolated enum ExportError: LocalizedError {
+        case renderingFailed
+        case pasteboardRefused
+
+        var errorDescription: String? {
+            switch self {
+            case .renderingFailed: String(localized: "The image couldn’t be rendered.")
+            case .pasteboardRefused: String(localized: "The clipboard didn’t accept the image.")
+            }
+        }
+    }
+
     // MARK: Rendering
 
     /// Full-resolution export. Decodes the background off the main actor, then renders.
@@ -63,10 +75,11 @@ enum ScreenshotRenderer {
         return rasterize(view, pixelSize: pixelSize, isOpaque: config.isOpaque)
     }
 
-    /// The background image decoded at the size the export needs (cached).
+    /// The background image decoded at the size the export needs. Not cached: an export-size
+    /// decode is large and rarely needed twice.
     static func backgroundImage(for config: ScreenshotStyleConfig, pixelSize: CGSize) async -> CGImage? {
         guard config.backgroundType == .image, let url = config.backgroundImage.url else { return nil }
-        return await ImageLoadingService.cachedImage(at: url, covering: pixelSize)
+        return await ImageLoadingService.image(at: url, covering: pixelSize)
     }
 
     /// Renders `view` (laid out in pixels) into an sRGB bitmap of exactly `pixelSize`.
@@ -92,8 +105,10 @@ enum ScreenshotRenderer {
 
         let bounds = CGRect(x: 0, y: 0, width: width, height: height)
         if let image = renderer.cgImage, image.width == width, image.height == height {
-            // GPU rendering (the same renderer as the canvas, ~10× faster than drawing with Core
-            // Graphics). The image renders lazily: drawing it here forces that on the main actor.
+            // GPU rendering (the same renderer as the canvas, faster than drawing with Core
+            // Graphics). The image renders lazily, in 16-bit extended sRGB: drawing it here
+            // renders it on the main actor and converts it to the 8-bit sRGB that gets encoded
+            // (encoding it as is would make 16-bit files, three times larger and slower).
             context.draw(image, in: bounds)
         } else {
             // Core Graphics fallback, e.g. for canvases beyond the GPU's texture size limit.
@@ -101,29 +116,16 @@ enum ScreenshotRenderer {
                 draw(context)
             }
         }
+        // The context's pixels become the image without a copy (copy-on-write, and the context is discarded).
         return context.makeImage()
     }
 
     // MARK: Output
 
-    /// Puts the image on the clipboard as PNG (with transparency) and TIFF, which every app can paste.
-    static func copyToPasteboard(_ output: Output) async throws {
-        let (png, tiff) = try await encodeForPasteboard(output)
-        let item = NSPasteboardItem()
-        item.setData(png, forType: .png)
-        item.setData(tiff, forType: .tiff)
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        guard pasteboard.writeObjects([item]) else {
-            throw CocoaError(.fileWriteUnknown, userInfo: [NSLocalizedDescriptionKey: String(localized: "The image couldn’t be copied to the clipboard.")])
-        }
-    }
-
+    /// PNG data for the clipboard, encoded off the main actor (`PasteboardWriter` offers TIFF lazily).
     @concurrent
-    private static func encodeForPasteboard(_ output: Output) async throws -> (Data, Data) {
-        let png = try ImageEncoder.data(for: output.image, format: .png, pixelDensity: output.pixelDensity)
-        let tiff = try ImageEncoder.tiffData(for: output.image, pixelDensity: output.pixelDensity)
-        return (png, tiff)
+    static func pngData(for output: Output) async throws -> Data {
+        try ImageEncoder.data(for: output.image, format: .png, pixelDensity: output.pixelDensity)
     }
 
     /// Encodes and writes the image to `url` (off the main actor).
@@ -131,21 +133,5 @@ enum ScreenshotRenderer {
     static func write(_ output: Output, to url: URL, format: ExportFormat, jpegQuality: Double) async throws {
         let data = try ImageEncoder.data(for: output.image, format: format, jpegQuality: jpegQuality, pixelDensity: output.pixelDensity)
         try data.write(to: url, options: .atomic)
-    }
-
-    /// Synchronous variant, for the rare drag that starts before its file is ready.
-    static func writeSync(_ output: Output, to url: URL, format: ExportFormat, jpegQuality: Double) throws {
-        let data = try ImageEncoder.data(for: output.image, format: format, jpegQuality: jpegQuality, pixelDensity: output.pixelDensity)
-        try data.write(to: url, options: .atomic)
-    }
-
-    // MARK: File Names
-
-    /// "Clické 2026-10-14 at 11.32.05.png", the same pattern as captures.
-    static func defaultFileName(for format: ExportFormat, date: Date = .now) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
-        return "Clické \(formatter.string(from: date)).\(format.fileExtension)"
     }
 }

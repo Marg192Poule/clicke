@@ -22,7 +22,6 @@ final class WallpaperLibrary {
 
     private(set) var entries: [Entry] = []
     private(set) var thumbnails: [BackgroundImageSource: CGImage] = [:]
-    private(set) var isLoading = false
     private var didStartLoading = false
 
     private init() {}
@@ -33,13 +32,11 @@ final class WallpaperLibrary {
     func loadIfNeeded() {
         guard !didStartLoading else { return }
         didStartLoading = true
-        isLoading = true
 
         Task {
             let bundled = await Self.discoverBundledWallpapers()
             let known = Set(entries.map(\.source))
             entries.append(contentsOf: bundled.filter { !known.contains($0.source) })
-            isLoading = false
             await loadThumbnails(for: bundled)
         }
     }
@@ -108,8 +105,32 @@ final class WallpaperLibrary {
         }
     }
 
-    /// Turns "macos-sonoma-6016x6016-11574" into "Macos Sonoma" for tooltips and VoiceOver.
+    /// The name shown in tooltips and to VoiceOver for a wallpaper file (base name, no extension).
     nonisolated static func displayName(forFileName name: String) -> String {
+        switch name {
+        case "10-14-Day": String(localized: "Mojave Day")
+        case "10-14-Night": String(localized: "Mojave Night")
+        case "14-Sonoma-Horizon": String(localized: "Sonoma Horizon")
+        case "15-Sequoia-Sunrise": String(localized: "Sequoia Sunrise")
+        case "26-Tahoe-Beach-Night": String(localized: "Tahoe Beach Night")
+        case "Black and White Gradient Macbook Wallpaper_Texture": String(localized: "Monochrome Gradient")
+        case "DefaultAerial": String(localized: "Aerial")
+        case "big-sur-mountains-night-dark-macos-big-sur-stock-california-6016x6016-1493": String(localized: "Big Sur Mountains")
+        case "road-mountains-tarmac-sunrise-morning-macos-big-sur-stock-5k-6016x6016-3996": String(localized: "Big Sur Road")
+        case "os-x-mountain-lion-earth-horizon-cosmos-stock-5120x3202-4003": String(localized: "Mountain Lion")
+        case "macos-sequoia-4096x2264-17018": String(localized: "Sequoia")
+        // Two colors of the same (dark) artwork.
+        case "macos-sonoma-6016x6016-11574": String(localized: "Sonoma Blue")
+        case "macos-sonoma-6016x6016-11577": String(localized: "Sonoma Teal")
+        case "macos-tahoe-26-5120x2880-22674": String(localized: "Tahoe Dark")
+        case "macos-tahoe-26-5120x2880-22675": String(localized: "Tahoe Light")
+        case "macos-ventura-macos-13-macos-2022-stock-dark-mode-5k-retina-6016x6016-8133": String(localized: "Ventura")
+        default: prettifiedName(forFileName: name)
+        }
+    }
+
+    /// Turns "macos-sonoma-6016x6016-11574" into "macOS Sonoma" (images the user imported).
+    nonisolated private static func prettifiedName(forFileName name: String) -> String {
         let noise: Set<String> = ["stock", "wallpaper", "5k", "4k", "retina", "macbook"]
         let words = name
             .split(whereSeparator: { "-_ ".contains($0) })
@@ -119,7 +140,9 @@ final class WallpaperLibrary {
                 let isNumeric = lower.allSatisfy { $0.isNumber || $0 == "x" } && lower.contains(where: \.isNumber)
                 return !isNumeric && !noise.contains(lower)
             }
-        let result = words.map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined(separator: " ")
+        let result = words
+            .map { $0.lowercased() == "macos" ? "macOS" : $0.prefix(1).uppercased() + $0.dropFirst() }
+            .joined(separator: " ")
         return result.isEmpty ? name : result
     }
 }

@@ -45,7 +45,10 @@ struct CanvasBackgroundView: View {
     @ViewBuilder
     private var adjustedFill: some View {
         let effects = config.effects
-        let fill = self.fill.modifier(ColorAdjustment(saturation: effects.saturation / 100, brightness: (effects.brightness - 100) / 100))
+        // An explicit white base: a background image with transparent areas looks the same on the
+        // canvas (in light and dark mode) as in the opaque export.
+        let fill = ZStack { Color.white; self.fill }
+            .modifier(ColorAdjustment(saturation: effects.saturation / 100, brightness: (effects.brightness - 100) / 100))
         if effects.blur > 0 {
             fill.blur(radius: effects.blur * scale, opaque: true)
         } else {

@@ -8,12 +8,30 @@ enum EditorPreferences {
     struct SavedStyle: Codable, Equatable {
         var canvas: ScreenshotStyleConfig
         var layer: LayerStyle
+
+        init(canvas: ScreenshotStyleConfig, layer: LayerStyle) {
+            self.canvas = canvas
+            self.layer = layer
+        }
+
+        // Tolerant decoding: a missing or unreadable part falls back to its default
+        // instead of discarding the whole saved style.
+        private enum CodingKeys: String, CodingKey {
+            case canvas, layer
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            canvas = (try? container.decodeIfPresent(ScreenshotStyleConfig.self, forKey: .canvas)) ?? .default
+            layer = (try? container.decodeIfPresent(LayerStyle.self, forKey: .layer)) ?? .default
+        }
     }
 
     private static let styleKey = "EditorLastStyle"
     private static let exportFormatKey = "EditorExportFormat"
     private static let jpegQualityKey = "EditorJPEGQuality"
     private static let inspectorTabKey = "EditorInspectorTab"
+    private static let inspectorPresentedKey = "EditorInspectorPresented"
 
     private static var defaults: UserDefaults { .standard }
 
@@ -25,7 +43,7 @@ enum EditorPreferences {
         do {
             return try JSONDecoder().decode(SavedStyle.self, from: data)
         } catch {
-            Logger.editor.error("Couldn't read the saved editor style: \(error.localizedDescription)")
+            Logger.editor.error("Couldn't read the saved editor style: \(error.localizedDescription, privacy: .private)")
             return nil
         }
     }
@@ -34,7 +52,7 @@ enum EditorPreferences {
         do {
             defaults.set(try JSONEncoder().encode(style), forKey: styleKey)
         } catch {
-            Logger.editor.error("Couldn't save the editor style: \(error.localizedDescription)")
+            Logger.editor.error("Couldn't save the editor style: \(error.localizedDescription, privacy: .private)")
         }
     }
 
@@ -56,6 +74,12 @@ enum EditorPreferences {
     static var inspectorTab: InspectorTab {
         get { defaults.string(forKey: inspectorTabKey).flatMap(InspectorTab.init(rawValue:)) ?? .background }
         set { defaults.set(newValue.rawValue, forKey: inspectorTabKey) }
+    }
+
+    /// Whether the inspector is shown (it is on first launch).
+    static var isInspectorPresented: Bool {
+        get { defaults.object(forKey: inspectorPresentedKey) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: inspectorPresentedKey) }
     }
 }
 

@@ -9,9 +9,7 @@ final class LayerImage: Equatable {
     /// Longest side of the preview copy, in pixels.
     nonisolated static let previewMaxPixelSize = 2048
 
-    /// The image as handed to the editor (used as the redaction input).
-    let nsImage: NSImage
-    /// Full resolution bitmap.
+    /// Full resolution bitmap (bounded by `ImageImport`).
     let cgImage: CGImage
     /// Size in points (pixels / pixel density), which defines the layer's natural size.
     let pointSize: CGSize
@@ -22,14 +20,10 @@ final class LayerImage: Equatable {
     /// Bumped on the main actor when the preview lands, to redraw views that rendered without it.
     private var previewGeneration = 0
 
-    init?(nsImage: NSImage) {
-        guard let cgImage = nsImage.bestCGImage, cgImage.width > 0, cgImage.height > 0 else { return nil }
-        self.nsImage = nsImage
+    init(_ image: ImportedImage) {
+        let cgImage = image.cgImage
         self.cgImage = cgImage
-        let size = nsImage.size
-        self.pointSize = size.width > 0 && size.height > 0
-            ? size
-            : CGSize(width: cgImage.width, height: cgImage.height)
+        self.pointSize = image.pointSize
 
         if max(cgImage.width, cgImage.height) > Self.previewMaxPixelSize {
             let storage = previewStorage
@@ -54,12 +48,27 @@ final class LayerImage: Equatable {
     /// Native pixels per point (2 for a Retina capture).
     var pixelDensity: CGFloat { CGFloat(cgImage.width) / pointSize.width }
 
+    /// Memory held by the bitmaps, in bytes (bounds the undo history).
+    var byteCount: Int {
+        let preview = previewStorage.withLock { $0 }
+        return cgImage.bytesPerRow * cgImage.height + (preview.map { $0.bytesPerRow * $0.height } ?? 0)
+    }
+
     /// The cheapest bitmap that still looks sharp when drawn `pixelWidth` pixels wide.
     func bitmap(forDisplayPixelWidth pixelWidth: CGFloat) -> CGImage {
         if let preview, pixelWidth <= CGFloat(preview.width) * 1.15 {
             return preview
         }
         return cgImage
+    }
+
+    /// The bitmap as an `NSImage` of the layer's point size (the redaction sheet's input).
+    func makeNSImage() -> NSImage {
+        let representation = NSBitmapImageRep(cgImage: cgImage)
+        representation.size = pointSize
+        let image = NSImage(size: pointSize)
+        image.addRepresentation(representation)
+        return image
     }
 
     static func == (lhs: LayerImage, rhs: LayerImage) -> Bool { lhs === rhs }

@@ -41,32 +41,49 @@ struct EditorInspectorView: View {
 private struct ExportFooter: View {
     let model: ScreenshotEditorViewModel
 
+    var body: some View {
+        ExportFooterContent(
+            thumbnail: model.exportThumbnail,
+            summary: "\(model.geometry.pixelSizeDescription) · \(model.exportFormat.displayName)",
+            dragItemProvider: { model.dragItemProvider() }
+        )
+        .equatable()
+    }
+}
+
+/// The footer's content, redrawn only when the thumbnail or the size changes (not at every edit).
+private struct ExportFooterContent: View, Equatable {
+    let thumbnail: CGImage?
+    let summary: String
+    let dragItemProvider: () -> NSItemProvider
+
     @State private var isHovering = false
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.thumbnail === rhs.thumbnail && lhs.summary == rhs.summary
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             Divider()
             HStack(spacing: 12) {
-                thumbnail
+                thumbnailView
                     .frame(width: 76, height: 52)
                     .onDrag {
-                        model.dragItemProvider()
+                        dragItemProvider()
                     } preview: {
-                        thumbnail.frame(width: 160, height: 110)
+                        thumbnailView.frame(width: 160, height: 110)
                     }
-                    .onHover { hovering in
-                        isHovering = hovering
-                        if hovering { model.prepareDragExport() }
-                    }
+                    .onHover { isHovering = $0 }
                     .pointerStyle(.grabIdle)
-                    .help("Drag the image to Finder, Mail, Messages or any other app.")
+                    .help("Drag the image to Finder, Mail, Messages or any other app")
                     .accessibilityLabel("Exported image")
                     .accessibilityHint("Drag to export the image to another app.")
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Drag to Export")
                         .font(.callout.weight(.medium))
-                    Text("\(model.geometry.pixelSizeDescription) · \(model.exportFormat.displayName)")
+                    Text(verbatim: summary)
                         .font(.caption)
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
@@ -78,9 +95,9 @@ private struct ExportFooter: View {
         }
     }
 
-    private var thumbnail: some View {
+    private var thumbnailView: some View {
         ZStack {
-            if let image = model.exportThumbnail {
+            if let image = thumbnail {
                 Image(decorative: image, scale: 1)
                     .resizable()
                     .interpolation(.high)

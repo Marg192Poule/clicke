@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 // MARK: - RGBA Color
 
@@ -47,7 +48,6 @@ nonisolated struct RGBAColor: Codable, Hashable, Sendable {
     var nsColor: NSColor { NSColor(srgbRed: red, green: green, blue: blue, alpha: alpha) }
 
     static let white = RGBAColor(red: 1, green: 1, blue: 1)
-    static let black = RGBAColor(red: 0, green: 0, blue: 0)
 }
 
 // MARK: - Background Type
@@ -225,21 +225,30 @@ nonisolated struct BackgroundEffects: Codable, Hashable, Sendable {
 
 /// A fixed canvas size, mostly for social networks. Exports are exactly `width × height` pixels.
 nonisolated struct SocialMediaPreset: Identifiable, Hashable, Sendable {
+    /// Stable identifier, used for persistence: it never changes, even if the platform is renamed.
+    let id: String
     let platform: String
     let name: String
     let width: Int
     let height: Int
     let ratio: String
 
-    /// Stable identifier, used for persistence.
-    var id: String { "\(platform).\(name)" }
+    init(id: String? = nil, platform: String, name: String, width: Int, height: Int, ratio: String) {
+        self.id = id ?? "\(platform).\(name)"
+        self.platform = platform
+        self.name = name
+        self.width = width
+        self.height = height
+        self.ratio = ratio
+    }
 
     var aspectRatio: CGFloat { CGFloat(width) / CGFloat(height) }
     var size: CGSize { CGSize(width: width, height: height) }
 
     static let presets: [SocialMediaPreset] = [
-        SocialMediaPreset(platform: "Twitter", name: "Post", width: 1200, height: 675, ratio: "16:9"),
-        SocialMediaPreset(platform: "Twitter", name: "Header", width: 1500, height: 500, ratio: "3:1"),
+        // Saved styles refer to the former "Twitter" IDs.
+        SocialMediaPreset(id: "Twitter.Post", platform: "X", name: "Post", width: 1200, height: 675, ratio: "16:9"),
+        SocialMediaPreset(id: "Twitter.Header", platform: "X", name: "Header", width: 1500, height: 500, ratio: "3:1"),
         SocialMediaPreset(platform: "Instagram", name: "Square", width: 1080, height: 1080, ratio: "1:1"),
         SocialMediaPreset(platform: "Instagram", name: "Portrait", width: 1080, height: 1350, ratio: "4:5"),
         SocialMediaPreset(platform: "Instagram", name: "Story", width: 1080, height: 1920, ratio: "9:16"),
@@ -457,7 +466,7 @@ struct CanvasItem: Identifiable, Equatable {
 
     /// Position of the layer's center relative to the canvas center, in canvas points.
     var offset: CGSize = .zero
-    /// Size in percent (100 = natural size, or "fit" for fixed-size canvases).
+    /// Size in percent (100 = natural size, or "fit" for fixed-size canvases), within `scaleRange`.
     var scale: Double = 100
     /// 2D rotation, in degrees.
     var rotation: Double = 0
@@ -466,6 +475,9 @@ struct CanvasItem: Identifiable, Equatable {
     var rotationY: Double = 0
     /// Stacking order (higher is in front).
     var zIndex: Double = 0
+
+    /// The sizes the Size slider and the resize handles allow, in percent.
+    static let scaleRange: ClosedRange<Double> = 10...400
 
     init(image: LayerImage, style: LayerStyle, id: UUID = UUID()) {
         self.id = id
@@ -497,6 +509,13 @@ nonisolated enum ExportFormat: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .png: "png"
         case .jpeg: "jpg"
+        }
+    }
+
+    var contentType: UTType {
+        switch self {
+        case .png: .png
+        case .jpeg: .jpeg
         }
     }
 }

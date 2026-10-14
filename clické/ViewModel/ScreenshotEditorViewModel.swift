@@ -11,14 +11,6 @@ struct RedactionRequest: Identifiable {
     let image: NSImage
 }
 
-/// Keyboard commands handled by the editor window (they work without a menu bar).
-enum EditorCommand {
-    case copy, save, close, undo, redo
-    case zoomIn, zoomOut, zoomToFit, actualSize
-    case deleteSelection, deselect, toggleInspector, addImage
-    case nudge(dx: CGFloat, dy: CGFloat)
-}
-
 // MARK: - ScreenshotEditorViewModel
 
 /// State and actions of the screenshot editor.
@@ -61,13 +53,17 @@ final class ScreenshotEditorViewModel {
     private(set) var isFitMode = true
     private(set) var viewportSize: CGSize = .zero
 
-    var isInspectorPresented = true
+    var isInspectorPresented: Bool {
+        didSet { EditorPreferences.isInspectorPresented = isInspectorPresented }
+    }
     var inspectorTab: InspectorTab {
         didSet { EditorPreferences.inspectorTab = inspectorTab }
     }
 
     var redactionRequest: RedactionRequest?
     private(set) var isExporting = false
+    /// Images being decoded off the main actor before they become layers.
+    private(set) var pendingImportCount = 0
 
     static let zoomRange: ClosedRange<CGFloat> = 0.05...8
 
@@ -105,19 +101,23 @@ final class ScreenshotEditorViewModel {
     private var isRestoringSnapshot = false
     private var interactionDepth = 0
     private var commitTask: Task<Void, Never>?
-    /// Incremented on every document change.
-    private(set) var documentVersion = 0
 
     /// Style given to new layers: the last style edited, remembered across captures.
     private var layerStyleTemplate: LayerStyle
 
+    /// The document as last copied, saved or dragged out (or as it opened): closing the editor
+    /// asks for confirmation when the document differs from it.
+    @ObservationIgnored private var exportedSnapshot: EditorSnapshot?
+
     // MARK: Drag Export
 
-    private var dragExport: (version: Int, format: ExportFormat, url: URL)?
-    private var dragExportTask: Task<Void, Never>?
+    /// Folders of the files handed out by drag and drop, deleted when the editor closes.
+    private var dragFileFolders: [URL] = []
 
     // MARK: - Initialization
 
+    /// Creates an editor with `images` as its first layers. Images that can't be edited are
+    /// reported; `hasContent` tells whether anything is left to show.
     init(images: [NSImage]) {
         let saved = EditorPreferences.loadStyle()
         var config = saved?.canvas ?? .default
@@ -131,16 +131,45 @@ final class ScreenshotEditorViewModel {
         self.exportFormat = EditorPreferences.exportFormat
         self.jpegQuality = EditorPreferences.jpegQuality
         self.inspectorTab = EditorPreferences.inspectorTab
+        self.isInspectorPresented = EditorPreferences.isInspectorPresented
 
         if case .file(let url) = config.backgroundImage {
             wallpapers.addImportedImage(at: url)
         }
 
-        isRestoringSnapshot = true // the initial layers aren't an undoable change
-        images.forEach { addImage($0) }
+        isRestoringSnapshot = true // the initial layers aren't an undoable change, nor an edit
+        addImages(images)
         isRestoringSnapshot = false
+        exportedSnapshot = snapshot
         updateBackgroundPreview()
         scheduleThumbnailRefresh()
+    }
+
+    /// Whether the editor has layers, or layers on the way.
+    var hasContent: Bool { !items.isEmpty || pendingImportCount > 0 }
+
+    // MARK: - Unexported Changes
+
+    /// Whether the document changed since it was last copied, saved or dragged out.
+    var hasUnexportedChanges: Bool { !items.isEmpty && snapshot != exportedSnapshot }
+
+    private func markExported(_ exported: EditorSnapshot) {
+        exportedSnapshot = exported
+        updateDocumentEditedState()
+    }
+
+    /// The user chose "Don’t Save": the editor can close without asking again.
+    func discardChanges() {
+        markExported(snapshot)
+    }
+
+    /// The window's close button shows a dot while there are unexported changes.
+    private func updateDocumentEditedState() {
+        guard let window else { return }
+        let edited = hasUnexportedChanges
+        if window.isDocumentEdited != edited {
+            window.isDocumentEdited = edited
+        }
     }
 
     // MARK: - Document Changes
@@ -148,20 +177,19 @@ final class ScreenshotEditorViewModel {
     private var snapshot: EditorSnapshot { EditorSnapshot(config: config, items: items) }
 
     private func documentDidChange(from previous: EditorSnapshot) {
-        documentVersion &+= 1
-        guard !isRestoringSnapshot else { return }
-
-        history.willChange(from: previous)
-        scheduleCommit()
-
-        if let selected = selectedItem, selected.style != layerStyleTemplate {
-            layerStyleTemplate = selected.style
+        if !isRestoringSnapshot {
+            history.willChange(from: previous)
+            scheduleCommit()
+            if let selected = selectedItem, selected.style != layerStyleTemplate {
+                layerStyleTemplate = selected.style
+            }
         }
         if CanvasGeometry(config: previous.config, items: previous.items).canvasSize != geometry.canvasSize {
             refitIfNeeded()
         }
         updateBackgroundPreview()
         scheduleThumbnailRefresh()
+        updateDocumentEditedState()
     }
 
     /// Marks the start of a continuous edit (slider or canvas drag): it becomes a single undo step.
@@ -220,7 +248,6 @@ final class ScreenshotEditorViewModel {
     }
 
     private func restore(_ snapshot: EditorSnapshot) {
-        let previousCanvas = geometry.canvasSize
         isRestoringSnapshot = true
         config = snapshot.config
         items = snapshot.items
@@ -232,12 +259,7 @@ final class ScreenshotEditorViewModel {
         if let selected = selectedItem {
             layerStyleTemplate = selected.style
         }
-        if previousCanvas != geometry.canvasSize {
-            refitIfNeeded()
-        }
         persistStyle()
-        updateBackgroundPreview()
-        scheduleThumbnailRefresh()
     }
 
     // MARK: Style Persistence
@@ -262,7 +284,9 @@ final class ScreenshotEditorViewModel {
         persistStyle()
         backgroundTask?.cancel()
         thumbnailTask?.cancel()
-        dragExportTask?.cancel()
+        removeDragFiles()
+        // The decoded backgrounds are only useful while an editor is open.
+        ImageLoadingService.cache.removeAll()
     }
 
     // MARK: - Layers
@@ -276,25 +300,15 @@ final class ScreenshotEditorViewModel {
         items.firstIndex { $0.id == id }
     }
 
-    /// A binding to a layer that stays valid if the layer is removed (writes are then ignored).
-    func binding(forItem id: UUID) -> Binding<CanvasItem>? {
-        guard let current = items.first(where: { $0.id == id }) else { return nil }
-        return Binding(
-            get: { [weak self] in self?.items.first { $0.id == id } ?? current },
-            set: { [weak self] newValue in
-                guard let self, let index = self.index(of: id) else { return }
-                self.items[index] = newValue
-            }
-        )
+    /// Edits a layer in place (ignored if the layer was removed meanwhile).
+    func updateItem(_ id: UUID, _ change: (inout CanvasItem) -> Void) {
+        guard let index = index(of: id) else { return }
+        change(&items[index])
     }
 
-    /// Adds an image as a new layer (selected, slightly offset from the previous ones).
-    func addImage(_ image: NSImage) {
-        guard let layer = LayerImage(nsImage: image) else {
-            Logger.editor.error("Ignored an image without bitmap data.")
-            return
-        }
-        var item = CanvasItem(image: layer, style: layerStyleTemplate)
+    /// Adds a bitmap as a new layer (selected, slightly offset from the previous ones).
+    private func addLayer(_ image: ImportedImage) {
+        var item = CanvasItem(image: LayerImage(image), style: layerStyleTemplate)
         let cascade = CGFloat(items.count) * 30
         item.offset = CGSize(width: cascade, height: cascade)
         item.zIndex = (items.map(\.zIndex).max() ?? -1) + 1
@@ -302,20 +316,51 @@ final class ScreenshotEditorViewModel {
         selectedItemID = item.id
     }
 
+    /// Adds images as new layers. Large images are decoded (and downsampled to the layer size
+    /// limit) off the main actor first; images that can't be edited are reported.
+    /// - Returns: The number of layers added or on the way.
+    @discardableResult
+    func addImages(_ images: [NSImage]) -> Int {
+        var added = 0
+        var failure: Error?
+        for image in images {
+            do {
+                switch try ImageImport.prepare(image) {
+                case .ready(let imported):
+                    addLayer(imported)
+                case .needsDecoding(let imported, let maxPixelSize):
+                    importInBackground { ImageImport.decode(imported, maxPixelSize: maxPixelSize) }
+                }
+                added += 1
+            } catch {
+                failure = error
+            }
+        }
+        if let failure {
+            presentImportError(failure)
+        }
+        return added
+    }
+
+    /// Adds image files as layers, decoded off the main actor.
+    func addImages(at urls: [URL]) {
+        for url in urls {
+            importFile(at: url)
+        }
+    }
+
     /// Shows an open panel and adds the chosen images.
     func addImagesFromFile() {
+        guard let window else { return }
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         panel.allowedContentTypes = [.image]
         panel.message = String(localized: "Choose images to add to the canvas.")
         panel.prompt = String(localized: "Add")
-        present(panel) { [weak self] urls in
-            for url in urls {
-                if let image = NSImage(contentsOf: url) {
-                    self?.addImage(image)
-                }
-            }
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard response == .OK else { return }
+            self?.addImages(at: panel.urls)
         }
     }
 
@@ -328,9 +373,7 @@ final class ScreenshotEditorViewModel {
                 _ = provider.loadObject(ofClass: URL.self) { url, _ in
                     guard let url else { return }
                     Task { @MainActor [weak self] in
-                        if let image = NSImage(contentsOf: url), image.isValid {
-                            self?.addImage(image)
-                        }
+                        self?.importFile(at: url)
                     }
                 }
             } else if provider.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
@@ -338,9 +381,7 @@ final class ScreenshotEditorViewModel {
                 provider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { data, _ in
                     guard let data else { return }
                     Task { @MainActor [weak self] in
-                        if let image = NSImage(data: data) {
-                            self?.addImage(image)
-                        }
+                        self?.importData(data)
                     }
                 }
             }
@@ -348,8 +389,100 @@ final class ScreenshotEditorViewModel {
         return accepted
     }
 
+    // MARK: Importing
+
+    /// Decodes an image file off the main actor (vector files go through `NSImage`, at a bounded size).
+    private func importFile(at url: URL) {
+        importInBackground(fileName: url.lastPathComponent, decode: {
+            ImageImport.canDecode(contentsOf: url) ? try ImageImport.load(contentsOf: url) : nil
+        }, fallback: {
+            NSImage(contentsOf: url)
+        })
+    }
+
+    /// Decodes dropped or pasted image data off the main actor.
+    private func importData(_ data: Data) {
+        importInBackground(fileName: nil, decode: {
+            try? ImageImport.load(data: data)
+        }, fallback: {
+            NSImage(data: data)
+        })
+    }
+
+    /// Runs `decode` off the main actor and adds the result. If it returns `nil`, the image is
+    /// read with `fallback` (on the main actor, for formats only AppKit reads, such as PDF).
+    private func importInBackground(
+        fileName: String?,
+        decode: @escaping @Sendable () throws -> ImportedImage?,
+        fallback: @escaping () -> NSImage?
+    ) {
+        pendingImportCount += 1
+        let isInitial = isRestoringSnapshot
+        Task {
+            defer { pendingImportCount -= 1 }
+            do {
+                if let imported = try await Self.runOffMainActor(decode) {
+                    addImportedLayer(imported, isInitial: isInitial)
+                    return
+                }
+                guard let image = fallback() else { throw ImageImportError.unreadable }
+                switch try ImageImport.prepare(image) {
+                case .ready(let imported):
+                    addImportedLayer(imported, isInitial: isInitial)
+                case .needsDecoding(let imported, let maxPixelSize):
+                    let decoded = try await Self.runOffMainActor { ImageImport.decode(imported, maxPixelSize: maxPixelSize) }
+                    addImportedLayer(decoded, isInitial: isInitial)
+                }
+            } catch {
+                presentImportError(error, fileName: fileName)
+            }
+        }
+    }
+
+    private func importInBackground(_ work: @escaping @Sendable () -> ImportedImage) {
+        importInBackground(fileName: nil, decode: work, fallback: { nil })
+    }
+
+    /// Adds a layer decoded in the background. One of the images the editor opened with
+    /// (`isInitial`) isn't an undoable change, nor an edit to confirm on close.
+    private func addImportedLayer(_ image: ImportedImage, isInitial: Bool) {
+        guard isInitial else {
+            addLayer(image)
+            return
+        }
+        let wasExported = !hasUnexportedChanges
+        isRestoringSnapshot = true
+        addLayer(image)
+        isRestoringSnapshot = false
+        if wasExported {
+            markExported(snapshot)
+        }
+    }
+
+    @concurrent
+    nonisolated private static func runOffMainActor<T: Sendable>(_ work: @Sendable () throws -> T) async throws -> T {
+        try work()
+    }
+
+    private func presentImportError(_ error: Error, fileName: String? = nil) {
+        Logger.editor.error("Couldn't import an image: \(error.localizedDescription, privacy: .private)")
+        switch error {
+        case ImageImportError.tooLarge:
+            presentAlert(message: String(localized: "This image is too large to edit."), informativeText: fileName.map { String(localized: "“\($0)” has too many pixels to be edited.") })
+        default:
+            if let fileName {
+                presentAlert(message: String(localized: "“\(fileName)” couldn’t be added."), informativeText: String(localized: "Only image files can be added to the canvas."))
+            } else {
+                presentAlert(message: String(localized: "The image couldn’t be added."), informativeText: error.localizedDescription)
+            }
+        }
+    }
+
+    /// The selected layer can be deleted (the last layer can't).
+    var canDeleteSelection: Bool { items.count > 1 && selectedItem != nil }
+
     func removeSelectedItem() {
-        guard items.count > 1, let id = selectedItemID else { return }
+        guard canDeleteSelection, let id = selectedItemID else { return }
         items.removeAll { $0.id == id }
         selectedItemID = items.max { $0.zIndex < $1.zIndex }?.id
     }
@@ -371,14 +504,16 @@ final class ScreenshotEditorViewModel {
 
     func setScale(_ scale: Double, forItem id: UUID) {
         guard let index = index(of: id) else { return }
-        items[index].scale = min(max(scale, 5), 400)
+        items[index].scale = min(max(scale, CanvasItem.scaleRange.lowerBound), CanvasItem.scaleRange.upperBound)
     }
 
-    /// Moves the selected layer by a few canvas points (arrow keys).
-    func nudgeSelection(dx: CGFloat, dy: CGFloat) {
-        guard let id = selectedItemID, let index = index(of: id) else { return }
+    /// Moves the selected layer by a few canvas points (arrow keys). Returns `false` if nothing is selected.
+    @discardableResult
+    func nudgeSelection(dx: CGFloat, dy: CGFloat) -> Bool {
+        guard let id = selectedItemID, let index = index(of: id) else { return false }
         items[index].offset.width += dx
         items[index].offset.height += dy
+        return true
     }
 
     /// Centers the layers on the canvas (as a group, keeping their arrangement).
@@ -411,13 +546,31 @@ final class ScreenshotEditorViewModel {
     func redactSelectedLayer() {
         guard let item = selectedItem ?? items.max(by: { $0.zIndex < $1.zIndex }) else { return }
         selectedItemID = item.id
-        redactionRequest = RedactionRequest(itemID: item.id, image: item.image.nsImage)
+        redactionRequest = RedactionRequest(itemID: item.id, image: item.image.makeNSImage())
     }
 
+    /// Replaces the layer's bitmap with the redacted one. The sheet stays open if that fails.
     func applyRedaction(_ image: NSImage, toItem id: UUID) {
+        guard let index = index(of: id) else {
+            redactionRequest = nil
+            return
+        }
+        let original = items[index].image
+        let bitmap = image.representations
+            .compactMap { $0 as? NSBitmapImageRep }
+            .max { $0.pixelsWide * $0.pixelsHigh < $1.pixelsWide * $1.pixelsHigh }
+        guard let redacted = bitmap?.cgImage, redacted.width > 0, redacted.height > 0 else {
+            Logger.editor.error("The redacted image has no bitmap.")
+            presentAlert(
+                message: String(localized: "The redaction couldn’t be applied."),
+                informativeText: String(localized: "Your screenshot wasn’t changed. Try again, or cancel."),
+                on: window?.attachedSheet
+            )
+            return
+        }
         redactionRequest = nil
-        guard let layer = LayerImage(nsImage: image), let index = index(of: id) else { return }
-        items[index].image = layer
+        guard redacted !== original.cgImage else { return } // nothing was redacted
+        items[index].image = LayerImage(ImportedImage(cgImage: redacted, pointSize: original.pointSize))
         commitHistory()
     }
 
@@ -461,24 +614,15 @@ final class ScreenshotEditorViewModel {
 
     /// Lets the user pick an image file as background.
     func importBackgroundImage() {
+        guard let window else { return }
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.allowedContentTypes = [.image]
         panel.message = String(localized: "Choose a background image.")
-        present(panel) { [weak self] urls in
-            guard let self, let url = urls.first else { return }
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard let self, response == .OK, let url = panel.urls.first else { return }
             selectWallpaper(wallpapers.addImportedImage(at: url))
-        }
-    }
-
-    private func present(_ panel: NSOpenPanel, completion: @escaping ([URL]) -> Void) {
-        if let window {
-            panel.beginSheetModal(for: window) { response in
-                if response == .OK { completion(panel.urls) }
-            }
-        } else if panel.runModal() == .OK {
-            completion(panel.urls)
         }
     }
 
@@ -654,89 +798,123 @@ final class ScreenshotEditorViewModel {
 
     // MARK: - Export
 
-    /// Copies the result to the clipboard (PNG + TIFF).
+    /// Copies the result to the clipboard: PNG, encoded off the main actor (TIFF is only produced
+    /// if an app asks for it, see `PasteboardWriter`).
     func copyToClipboard() {
-        guard !isExporting, !items.isEmpty else { return }
+        guard !isExporting, !items.isEmpty, checkExportLimits() else { return }
         isExporting = true
+        let exported = snapshot
+        let previouslyExported = exportedSnapshot
+        // Counts as exported right away, so closing the editor just after ⌘C doesn't ask.
+        markExported(exported)
         Task {
             defer { isExporting = false }
-            guard let output = await ScreenshotRenderer.render(config: config, items: items) else {
-                presentError(message: String(localized: "The image couldn’t be rendered."))
-                return
-            }
             do {
-                try await ScreenshotRenderer.copyToPasteboard(output)
-                ToastManager.shared.show(message: String(localized: "Copied"), icon: "doc.on.clipboard.fill", success: true)
+                guard let output = await ScreenshotRenderer.render(config: exported.config, items: exported.items) else {
+                    throw ScreenshotRenderer.ExportError.renderingFailed
+                }
+                let png = try await ScreenshotRenderer.pngData(for: output)
+                guard PasteboardWriter.writePNG(png) else {
+                    throw ScreenshotRenderer.ExportError.pasteboardRefused
+                }
+                ToastManager.shared.show(message: String(localized: "Copied to Clipboard"), icon: "doc.on.clipboard.fill", success: true)
             } catch {
+                if exportedSnapshot == exported {
+                    exportedSnapshot = previouslyExported
+                    updateDocumentEditedState()
+                }
                 presentError(error, message: String(localized: "The image couldn’t be copied."))
             }
         }
     }
 
     /// Shows a save panel and writes the result in the chosen format.
-    func save() {
-        guard !isExporting, !items.isEmpty else { return }
+    /// - Parameter completion: Called with `true` once the file is written, `false` if the user
+    ///   cancelled or the export failed.
+    func save(completion: ((Bool) -> Void)? = nil) {
+        guard !isExporting, !items.isEmpty, let window, checkExportLimits() else {
+            completion?(false)
+            return
+        }
         let panel = NSSavePanel()
         panel.canCreateDirectories = true
         panel.isExtensionHidden = false
-        panel.allowedContentTypes = [exportFormat == .png ? .png : .jpeg]
-        panel.nameFieldStringValue = ScreenshotRenderer.defaultFileName(for: exportFormat)
+        panel.allowedContentTypes = [exportFormat.contentType]
+        panel.nameFieldStringValue = "\(ScreenCapture.baseFileName(for: .now)).\(exportFormat.fileExtension)"
         let accessory = NSHostingView(rootView: SaveFormatAccessory(model: self) { [weak panel] format in
             guard let panel else { return }
-            panel.allowedContentTypes = [format == .png ? .png : .jpeg]
+            panel.allowedContentTypes = [format.contentType]
             let baseName = (panel.nameFieldStringValue as NSString).deletingPathExtension
             panel.nameFieldStringValue = "\(baseName).\(format.fileExtension)"
         })
         accessory.frame.size = accessory.fittingSize
         panel.accessoryView = accessory
 
-        let handler: (NSApplication.ModalResponse) -> Void = { [weak self] response in
-            guard response == .OK, let url = panel.url else { return }
-            self?.export(to: url)
-        }
-        if let window {
-            panel.beginSheetModal(for: window, completionHandler: handler)
-        } else {
-            handler(panel.runModal())
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard let self, response == .OK, let url = panel.url else {
+                completion?(false)
+                return
+            }
+            export(to: url, completion: completion)
         }
     }
 
-    private func export(to url: URL) {
+    private func export(to url: URL, completion: ((Bool) -> Void)?) {
         isExporting = true
+        let exported = snapshot
         let format = exportFormat
         let quality = jpegQuality
         Task {
             defer { isExporting = false }
-            guard let output = await ScreenshotRenderer.render(config: config, items: items) else {
-                presentError(message: String(localized: "The image couldn’t be rendered."))
-                return
-            }
             do {
+                guard let output = await ScreenshotRenderer.render(config: exported.config, items: exported.items) else {
+                    throw ScreenshotRenderer.ExportError.renderingFailed
+                }
                 try await ScreenshotRenderer.write(output, to: url, format: format, jpegQuality: quality)
-                ToastManager.shared.show(message: String(localized: "Saved"), icon: "checkmark.circle.fill", success: true)
+                markExported(exported)
+                let folder = FileManager.default.displayName(atPath: url.deletingLastPathComponent().path)
+                ToastManager.shared.show(message: String(localized: "Saved to “\(folder)”"), icon: "checkmark.circle.fill", success: true)
+                completion?(true)
             } catch {
                 presentError(error, message: String(localized: "The image couldn’t be saved."))
+                completion?(false)
             }
         }
     }
 
+    /// Shows an alert and returns `false` if the export would exceed the size limits.
+    private func checkExportLimits() -> Bool {
+        let geometry = self.geometry
+        guard !geometry.isWithinExportLimits else { return true }
+        presentAlert(
+            message: String(localized: "This image is too large to export."),
+            informativeText: String(localized: "It would be \(geometry.pixelSizeDescription), and exports are limited to 16,384 pixels per side and 200 megapixels. Reduce the padding or the size of the images, or choose a canvas size.")
+        )
+        return false
+    }
+
     private func presentError(_ error: Error? = nil, message: String) {
         if let error {
-            Logger.editor.error("\(message, privacy: .public) \(error.localizedDescription, privacy: .public)")
+            Logger.editor.error("\(message, privacy: .public) \(error.localizedDescription, privacy: .private)")
         } else {
             Logger.editor.error("\(message, privacy: .public)")
+        }
+        presentAlert(message: message, informativeText: error?.localizedDescription)
+    }
+
+    /// Shows an alert as a sheet on the editor window (or on `host`), or a toast if there's no visible window.
+    private func presentAlert(message: String, informativeText: String? = nil, on host: NSWindow? = nil) {
+        guard let host = host ?? window, host.isVisible else {
+            ToastManager.shared.show(message: message, icon: "exclamationmark.triangle.fill", success: false)
+            return
         }
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = message
-        if let error {
-            alert.informativeText = error.localizedDescription
+        if let informativeText {
+            alert.informativeText = informativeText
         }
-        if let window {
-            alert.beginSheetModal(for: window)
-        } else {
-            alert.runModal()
-        }
+        alert.beginSheetModal(for: host)
     }
 
     // MARK: Thumbnail & Drag Out
@@ -755,101 +933,111 @@ final class ScreenshotEditorViewModel {
         }
     }
 
-    /// Prepares the file a drag-out will hand over (called when the pointer hovers the thumbnail).
-    func prepareDragExport() {
-        guard !isDragExportCurrent, dragExportTask == nil, !items.isEmpty else { return }
-        let version = documentVersion
-        let format = exportFormat
-        let quality = jpegQuality
-        dragExportTask = Task { [weak self] in
-            guard let self else { return }
-            defer { self.dragExportTask = nil }
-            guard let output = await ScreenshotRenderer.render(config: config, items: items),
-                  let url = Self.makeDragExportURL(format: format) else { return }
-            do {
-                try await ScreenshotRenderer.write(output, to: url, format: format, jpegQuality: quality)
-                self.dragExport = (version, format, url)
-            } catch {
-                Logger.editor.error("Couldn't prepare the drag export: \(error.localizedDescription, privacy: .public)")
-            }
-        }
-    }
-
-    private var isDragExportCurrent: Bool {
-        guard let dragExport else { return false }
-        return dragExport.version == documentVersion && dragExport.format == exportFormat
-            && FileManager.default.fileExists(atPath: dragExport.url.path)
-    }
-
     /// The item provider for dragging the result out (Finder, Mail, Slack…): a file in the export format.
+    ///
+    /// The image is rendered in memory when the drag starts; the file is encoded and written (in the
+    /// app's private temporary folder) only if a drop asks for it, and deleted when the editor closes.
     func dragItemProvider() -> NSItemProvider {
-        if isDragExportCurrent, let url = dragExport?.url, let provider = NSItemProvider(contentsOf: url) {
-            return provider
-        }
-        // The file isn't ready (the drag started right after an edit): render it now.
-        let geometry = self.geometry
-        let background = config.backgroundType == .image
-            ? config.backgroundImage.url.flatMap { ImageLoadingService.cachedImageSync(at: $0, covering: geometry.pixelSize) }
-            : nil
-        guard let output = ScreenshotRenderer.render(config: config, items: items, geometry: geometry, background: background),
-              let url = Self.makeDragExportURL(format: exportFormat) else { return NSItemProvider() }
-        do {
-            try ScreenshotRenderer.writeSync(output, to: url, format: exportFormat, jpegQuality: jpegQuality)
-            dragExport = (documentVersion, exportFormat, url)
-            return NSItemProvider(contentsOf: url) ?? NSItemProvider()
-        } catch {
-            Logger.editor.error("Couldn't write the drag export: \(error.localizedDescription, privacy: .public)")
-            return NSItemProvider()
-        }
+        let provider = NSItemProvider()
+        guard !items.isEmpty, checkExportLimits() else { return provider }
+        let exported = snapshot
+        let format = exportFormat
+        let baseName = ScreenCapture.baseFileName(for: .now)
+        let render = Task { await ScreenshotRenderer.render(config: exported.config, items: exported.items) }
+        provider.suggestedName = baseName
+        provider.registerFileRepresentation(
+            forTypeIdentifier: format.contentType.identifier,
+            fileOptions: [],
+            visibility: .all,
+            loadHandler: Self.dragFileLoader(
+                render: render,
+                format: format,
+                jpegQuality: jpegQuality,
+                fileName: "\(baseName).\(format.fileExtension)"
+            ) { [weak self] url in
+                guard let self else { return }
+                dragFileFolders.append(url.deletingLastPathComponent())
+                markExported(exported)
+            }
+        )
+        return provider
     }
 
-    /// A fresh temporary file URL with the default export name (older drag exports are cleaned up).
-    private static func makeDragExportURL(format: ExportFormat) -> URL? {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("Clické Drag Exports", isDirectory: true)
-        if let old = try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: [.creationDateKey]) {
-            let stale = old.filter {
-                let created = (try? $0.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
-                return created < Date.now.addingTimeInterval(-600)
+    /// The load handler of a dragged file: waits for the render, encodes it off the main actor,
+    /// then writes it through `CaptureTemporaryStorage`.
+    nonisolated private static func dragFileLoader(
+        render: Task<ScreenshotRenderer.Output?, Never>,
+        format: ExportFormat,
+        jpegQuality: Double,
+        fileName: String,
+        didWrite: @escaping @MainActor @Sendable (URL) -> Void
+    ) -> @Sendable (@escaping @Sendable (URL?, Bool, (any Error)?) -> Void) -> Progress? {
+        { completion in
+            Task.detached(priority: .userInitiated) {
+                do {
+                    guard let output = await render.value else { throw ScreenshotRenderer.ExportError.renderingFailed }
+                    let data = try ImageEncoder.data(for: output.image, format: format, jpegQuality: jpegQuality, pixelDensity: output.pixelDensity)
+                    let url = try await MainActor.run {
+                        let url = try CaptureTemporaryStorage.writeDragFile(data, named: fileName)
+                        didWrite(url)
+                        return url
+                    }
+                    completion(url, false, nil)
+                } catch {
+                    Logger.editor.error("Couldn't provide the dragged image: \(error.localizedDescription, privacy: .private)")
+                    completion(nil, false, error)
+                }
             }
-            stale.forEach { try? FileManager.default.removeItem(at: $0) }
-        }
-        let folder = root.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        do {
-            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        } catch {
-            Logger.editor.error("Couldn't create the drag export folder: \(error.localizedDescription, privacy: .public)")
             return nil
         }
-        return folder.appendingPathComponent(ScreenshotRenderer.defaultFileName(for: format))
+    }
+
+    /// Deletes the files handed out by drag and drop (receivers have their copy by now).
+    private func removeDragFiles() {
+        for folder in dragFileFolders {
+            try? FileManager.default.removeItem(at: folder)
+        }
+        dragFileFolders.removeAll()
     }
 
     // MARK: - Commands
 
-    /// Handles a keyboard command. Returns `false` if it doesn't apply (the key event then continues).
-    func perform(_ command: EditorCommand) -> Bool {
-        switch command {
-        case .copy: copyToClipboard()
-        case .save: save()
-        case .close: window?.performClose(nil)
-        case .undo: undo()
-        case .redo: redo()
-        case .zoomIn: zoomIn()
-        case .zoomOut: zoomOut()
-        case .zoomToFit: zoomToFit()
-        case .actualSize: zoomToActualSize()
-        case .addImage: addImagesFromFile()
-        case .toggleInspector:
-            withEditorAnimation { isInspectorPresented.toggle() }
-        case .deleteSelection:
-            guard selectedItemID != nil, items.count > 1 else { return false }
-            removeSelectedItem()
-        case .deselect:
-            guard selectedItemID != nil else { return false }
-            selectedItemID = nil
-        case .nudge(let dx, let dy):
-            guard selectedItemID != nil else { return false }
-            nudgeSelection(dx: dx, dy: dy)
+    /// Whether Copy, Save and drag-out are available.
+    var canExport: Bool { !isExporting && !items.isEmpty }
+
+    func toggleInspector() {
+        withEditorAnimation { isInspectorPresented.toggle() }
+    }
+
+    /// File URLs of images (an image copied in Finder is pasted as the file, not as its icon).
+    private static let imageFileReadingOptions: [NSPasteboard.ReadingOptionKey: Any] = [
+        .urlReadingFileURLsOnly: true,
+        .urlReadingContentsConformToTypes: [UTType.image.identifier],
+    ]
+
+    /// Whether the clipboard holds an image or an image file (checks the types only).
+    var canPasteImage: Bool {
+        let pasteboard = NSPasteboard.general
+        return pasteboard.canReadObject(forClasses: [NSURL.self], options: Self.imageFileReadingOptions)
+            || pasteboard.canReadItem(withDataConformingToTypes: [UTType.image.identifier])
+    }
+
+    /// Adds the clipboard's images as new layers.
+    func pasteImage() {
+        let pasteboard = NSPasteboard.general
+        if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: Self.imageFileReadingOptions) as? [URL], !urls.isEmpty {
+            addImages(at: urls)
+            return
         }
-        return true
+        var pasted = false
+        for item in pasteboard.pasteboardItems ?? [] {
+            guard let type = item.types.first(where: { UTType($0.rawValue)?.conforms(to: .image) == true }),
+                  let data = item.data(forType: type) else { continue }
+            importData(data)
+            pasted = true
+        }
+        if !pasted {
+            NSSound.beep()
+        }
     }
 }

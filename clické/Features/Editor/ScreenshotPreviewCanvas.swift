@@ -7,6 +7,10 @@ import UniformTypeIdentifiers
 struct ScreenshotPreviewCanvas: View {
     let model: ScreenshotEditorViewModel
 
+    // A `@GestureState` resets when its gesture ends *or is cancelled*: watching it guarantees
+    // the gesture's state is always cleaned up.
+    @GestureState private var isPanning = false
+    @GestureState private var isMagnifying = false
     @State private var panStart: CGSize?
     @State private var magnificationStartZoom: CGFloat?
     @State private var isDropTargeted = false
@@ -59,32 +63,34 @@ struct ScreenshotPreviewCanvas: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Canvas")
+        .onChange(of: isPanning) { _, panning in
+            if !panning { panStart = nil }
+        }
+        .onChange(of: isMagnifying) { _, magnifying in
+            if !magnifying { magnificationStartZoom = nil }
+        }
     }
 
     // MARK: Gestures
 
     private var panGesture: some Gesture {
         DragGesture(minimumDistance: 2)
+            .updating($isPanning) { _, state, _ in state = true }
             .onChanged { value in
                 let start = panStart ?? model.pan
                 if panStart == nil { panStart = start }
                 model.setPan(CGSize(width: start.width + value.translation.width, height: start.height + value.translation.height))
-            }
-            .onEnded { _ in
-                panStart = nil
             }
     }
 
     /// Pinch to zoom, relative to the zoom at the start of the gesture, around the pinch location.
     private var magnifyGesture: some Gesture {
         MagnifyGesture()
+            .updating($isMagnifying) { _, state, _ in state = true }
             .onChanged { value in
                 let start = magnificationStartZoom ?? model.zoom
                 if magnificationStartZoom == nil { magnificationStartZoom = start }
                 model.setZoom(start * value.magnification, anchor: value.startLocation)
-            }
-            .onEnded { _ in
-                magnificationStartZoom = nil
             }
     }
 }
@@ -112,10 +118,13 @@ private struct CanvasStage: View {
                 )
                 .allowsHitTesting(false) // clicks on the background reach the workspace
 
+                // Layers are numbered in the order they were added ("Layer 2"), like in the inspector.
+                let numbers = Dictionary(uniqueKeysWithValues: model.items.enumerated().map { ($1.id, $0 + 1) })
                 ForEach(model.items.sorted { $0.zIndex < $1.zIndex }) { item in
                     CanvasLayer(
                         model: model,
                         item: item,
+                        number: numbers[item.id] ?? 1,
                         unit: geometry.layerScale(for: item) * zoom,
                         center: geometry.center(of: item, scale: zoom),
                         zoom: zoom
@@ -148,33 +157,83 @@ private struct CanvasStage: View {
 
 // MARK: - Layer
 
-/// A layer on the live canvas: click to select, drag to move.
+/// A layer on the live canvas: click to select, drag to move, right-click for its actions.
 private struct CanvasLayer: View {
     let model: ScreenshotEditorViewModel
     let item: CanvasItem
+    /// "Layer 2": the layer's number, in the order layers were added.
+    let number: Int
     /// Screen points per layer point.
     let unit: CGFloat
     let center: CGPoint
     let zoom: CGFloat
 
     @Environment(\.displayScale) private var displayScale
+    /// `true` while the drag gesture is active; resets on end *and* on cancellation.
+    @GestureState private var isDragging = false
     @State private var dragStartOffset: CGSize?
 
     var body: some View {
         let pixelWidth = item.image.pointSize.width * unit * displayScale
         LayerView(item: item, image: item.image.bitmap(forDisplayPixelWidth: pixelWidth), unit: unit)
             .gesture(dragGesture)
-            .pointerStyle(dragStartOffset == nil ? .grabIdle : .grabActive)
-            .position(center)
+            .pointerStyle(isDragging ? .grabActive : .grabIdle)
+            .contextMenu {
+                Button("Copy", action: copy)
+                Button("Redact…", action: redact)
+                Button("Bring to Front", action: bringToFront)
+                Button("Send to Back", action: sendToBack)
+                Divider()
+                Button("Delete Layer", role: .destructive, action: delete)
+                    .disabled(model.items.count < 2)
+            }
             .accessibilityElement()
-            .accessibilityLabel("Screenshot")
+            .accessibilityLabel(Text("Layer \(number)"))
             .accessibilityAddTraits(model.selectedItemID == item.id ? [.isImage, .isSelected] : .isImage)
             .accessibilityAction { model.selectedItemID = item.id }
+            .accessibilityAction(named: Text("Copy"), copy)
+            .accessibilityAction(named: Text("Redact"), redact)
+            .accessibilityAction(named: Text("Bring to Front"), bringToFront)
+            .accessibilityAction(named: Text("Send to Back"), sendToBack)
+            .accessibilityAction(named: Text("Delete Layer"), delete)
+            .position(center)
+            .onChange(of: isDragging) { _, dragging in
+                if !dragging { endDrag() }
+            }
+            .onDisappear { endDrag() }
+    }
+
+    // MARK: Actions
+
+    /// Copies the image (the whole composition, like ⌘C).
+    private func copy() {
+        model.copyToClipboard()
+    }
+
+    private func redact() {
+        model.selectedItemID = item.id
+        model.redactSelectedLayer()
+    }
+
+    private func bringToFront() {
+        model.selectedItemID = item.id
+        model.bringSelectedToFront()
+    }
+
+    private func sendToBack() {
+        model.selectedItemID = item.id
+        model.sendSelectedToBack()
+    }
+
+    private func delete() {
+        model.selectedItemID = item.id
+        model.removeSelectedItem()
     }
 
     /// Starts on mouse down (so a click selects), moves the layer while dragging, one undo step.
     private var dragGesture: some Gesture {
         DragGesture(minimumDistance: 0, coordinateSpace: .named(ScreenshotPreviewCanvas.coordinateSpace))
+            .updating($isDragging) { _, state, _ in state = true }
             .onChanged { value in
                 if dragStartOffset == nil {
                     dragStartOffset = item.offset
@@ -188,10 +247,13 @@ private struct CanvasLayer: View {
                     forItem: item.id
                 )
             }
-            .onEnded { _ in
-                dragStartOffset = nil
-                model.endInteraction()
-            }
+    }
+
+    /// Ends the undo step of the drag (once, whether the gesture ended or was cancelled).
+    private func endDrag() {
+        guard dragStartOffset != nil else { return }
+        dragStartOffset = nil
+        model.endInteraction()
     }
 }
 
@@ -249,6 +311,8 @@ private struct ResizeHandle: View {
     let corner: HandleCorner
     let layerCenter: CGPoint
 
+    /// `true` while the resize gesture is active; resets on end *and* on cancellation.
+    @GestureState private var isResizing = false
     @State private var start: (scale: Double, distance: CGFloat)?
 
     var body: some View {
@@ -261,11 +325,16 @@ private struct ResizeHandle: View {
             .contentShape(Rectangle())
             .pointerStyle(.frameResize(position: corner.resizePosition))
             .gesture(resizeGesture)
+            .onChange(of: isResizing) { _, resizing in
+                if !resizing { endResize() }
+            }
+            .onDisappear { endResize() }
             .accessibilityHidden(true)
     }
 
     private var resizeGesture: some Gesture {
         DragGesture(minimumDistance: 1, coordinateSpace: .named(ScreenshotPreviewCanvas.coordinateSpace))
+            .updating($isResizing) { _, state, _ in state = true }
             .onChanged { value in
                 if start == nil {
                     start = (item.scale, distance(value.startLocation))
@@ -274,10 +343,13 @@ private struct ResizeHandle: View {
                 guard let start, start.distance > 1 else { return }
                 model.setScale(start.scale * Double(distance(value.location) / start.distance), forItem: item.id)
             }
-            .onEnded { _ in
-                start = nil
-                model.endInteraction()
-            }
+    }
+
+    /// Ends the undo step of the resize (once, whether the gesture ended or was cancelled).
+    private func endResize() {
+        guard start != nil else { return }
+        start = nil
+        model.endInteraction()
     }
 
     private func distance(_ point: CGPoint) -> CGFloat {

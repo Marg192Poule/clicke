@@ -8,11 +8,19 @@ import CoreGraphics
 ///   A layer is drawn at `layerScale(for:)` canvas points per layer point.
 ///
 /// Export resolution:
-/// - **Auto** (no preset): the canvas wraps the largest layer plus padding, and is exported at that
-///   layer's native pixel density (2× for a Retina capture), so nothing gets downsampled.
+/// - **Auto** (no preset): the canvas wraps the largest layer plus padding, and is exported at the
+///   highest native pixel density among the layers (2× for a Retina capture, at most 4×), so
+///   nothing gets downsampled.
 /// - **Preset**: the canvas is `width × height` canvas points exported at 1×, i.e. exactly the
 ///   preset's pixel size; layers are scaled to fit inside the padding.
+///
+/// Exports are limited to `maxExportPixelSide` pixels per side and `maxExportPixelCount` pixels:
+/// an automatic canvas lowers its density (never below 1×) to fit, and Copy, Save and drag-out
+/// refuse a canvas that still doesn't (`isWithinExportLimits`).
 struct CanvasGeometry: Equatable {
+    static let maxExportPixelSide: CGFloat = 16_384
+    static let maxExportPixelCount: CGFloat = 200_000_000
+
     /// Canvas size, in canvas points.
     let canvasSize: CGSize
     /// Export pixels per canvas point.
@@ -39,7 +47,9 @@ struct CanvasGeometry: Equatable {
         } else if let reference = Self.referenceItem(in: items) {
             let framed = Self.rotatedBounds(of: reference.framedSize, degrees: reference.rotation)
             size = CGSize(width: framed.width + padding * 2, height: framed.height + padding * 2)
-            scale = min(max(reference.image.pixelDensity, 1), 8)
+            // The sharpest layer sets the density, so no layer gets downsampled.
+            let density = min(max(items.map(\.image.pixelDensity).max() ?? 1, 1), 4)
+            scale = max(min(density, Self.largestScale(fitting: size)), 1)
         } else {
             size = Self.emptyCanvasSize
             scale = 1
@@ -55,8 +65,12 @@ struct CanvasGeometry: Equatable {
         self.canvasSize = CGSize(width: pixels.width / scale, height: pixels.height / scale)
     }
 
-    /// Whether the canvas has a fixed size (social preset) instead of wrapping the screenshot.
-    var hasFixedSize: Bool { preset != nil }
+    /// Whether the export stays within `maxExportPixelSide` and `maxExportPixelCount`.
+    var isWithinExportLimits: Bool {
+        pixelSize.width <= Self.maxExportPixelSide
+            && pixelSize.height <= Self.maxExportPixelSide
+            && pixelSize.width * pixelSize.height <= Self.maxExportPixelCount
+    }
 
     /// Canvas points per layer point.
     func layerScale(for item: CanvasItem) -> CGFloat {
@@ -96,6 +110,16 @@ struct CanvasGeometry: Equatable {
     /// The layer that defines an automatic canvas: the largest one.
     static func referenceItem(in items: [CanvasItem]) -> CanvasItem? {
         items.max { $0.framedSize.width * $0.framedSize.height < $1.framedSize.width * $1.framedSize.height }
+    }
+
+    /// The largest pixels-per-point scale at which a canvas of `size` points stays within the export limits.
+    private static func largestScale(fitting size: CGSize) -> CGFloat {
+        guard size.width > 0, size.height > 0 else { return .greatestFiniteMagnitude }
+        return min(
+            maxExportPixelSide / size.width,
+            maxExportPixelSide / size.height,
+            (maxExportPixelCount / (size.width * size.height)).squareRoot()
+        )
     }
 
     /// Bounding box of a `size` rectangle rotated by `degrees`.
