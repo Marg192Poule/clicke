@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 import AVFoundation
-internal import Combine
+import Combine
 
 // MARK: - Optimized Wallpaper Cache using NSCache
 /// Singleton cache using NSCache for automatic memory management

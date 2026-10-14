@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 import AVFoundation
-internal import UniformTypeIdentifiers
+import UniformTypeIdentifiers
 
 struct ScreenshotEditorView: View {
     let originalImage: NSImage
