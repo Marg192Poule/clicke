@@ -356,7 +356,7 @@ struct HotkeyConfiguration: Codable, Equatable, Hashable {
         ]
         if let digit = numberRow[Int(keyCode)] { return digit }
         if let name = translateKeyCodeWithCurrentLayout(keyCode) { return name }
-        return "Key \(keyCode)"
+        return String(localized: "Key \(keyCode)", comment: "Shortcut key without a printable name: its key code")
     }
 
     /// Whether the key is a function key (F1–F20), which may be used without modifiers.
@@ -393,7 +393,8 @@ struct HotkeyConfiguration: Codable, Equatable, Hashable {
             UInt16(kUCKeyActionDisplay),
             0,
             UInt32(LMGetKbdType()),
-            OptionBits(kUCKeyTranslateNoDeadKeysBit),
+            // The mask (1 << bit), not the bit number: dead keys (´ ` ^ ¨ ~) return their own character.
+            OptionBits(kUCKeyTranslateNoDeadKeysMask),
             &deadKeyState,
             unicodeString.count,
             &actualLength,
