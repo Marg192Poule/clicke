@@ -118,12 +118,8 @@ nonisolated enum ImageLoadingService {
 
     // MARK: Resizing
 
-    /// Returns a copy of `image` whose longest side is at most `maxPixelSize` (or `image` itself if already smaller).
-    @concurrent
-    static func downsample(_ image: CGImage, maxPixelSize: Int) async -> CGImage {
-        downsampleSync(image, maxPixelSize: maxPixelSize)
-    }
-
+    /// Returns a copy of `image` whose longest side is at most `maxPixelSize` (or `image` itself if
+    /// already smaller). Synchronous: call it off the main actor.
     static func downsampleSync(_ image: CGImage, maxPixelSize: Int) -> CGImage {
         let longest = max(image.width, image.height)
         guard longest > maxPixelSize, maxPixelSize > 0 else { return image }

@@ -8,6 +8,23 @@ enum EditorPreferences {
     struct SavedStyle: Codable, Equatable {
         var canvas: ScreenshotStyleConfig
         var layer: LayerStyle
+
+        init(canvas: ScreenshotStyleConfig, layer: LayerStyle) {
+            self.canvas = canvas
+            self.layer = layer
+        }
+
+        // Tolerant decoding: a missing or unreadable part falls back to its default
+        // instead of discarding the whole saved style.
+        private enum CodingKeys: String, CodingKey {
+            case canvas, layer
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            canvas = (try? container.decodeIfPresent(ScreenshotStyleConfig.self, forKey: .canvas)) ?? .default
+            layer = (try? container.decodeIfPresent(LayerStyle.self, forKey: .layer)) ?? .default
+        }
     }
 
     private static let styleKey = "EditorLastStyle"

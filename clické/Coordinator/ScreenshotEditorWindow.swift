@@ -77,14 +77,15 @@ final class ScreenshotEditorWindow: NSObject, NSWindowDelegate {
         window.title = String(localized: "Clické Editor")
         window.toolbarStyle = .unified
         window.minSize = NSSize(width: 760, height: 520)
+        window.collectionBehavior.insert(.fullScreenPrimary)
 
-        // Restore the last frame, or use 85% of the screen (up to 1600 × 1000).
+        // Restore the last frame, or use 85% of the screen under the pointer (up to 1600 × 1000).
         // Done before the content is set, so SwiftUI lays the editor out once, at its final size.
         if !window.setFrameUsingName(Self.frameAutosaveName) {
-            let visible = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+            let visible = ScreenLocator.screenUnderPointer()?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
             let size = NSSize(width: min(visible.width * 0.85, 1600), height: min(visible.height * 0.85, 1000))
-            window.setFrame(NSRect(origin: .zero, size: size), display: false)
-            window.center()
+            let origin = NSPoint(x: (visible.midX - size.width / 2).rounded(), y: (visible.midY - size.height / 2).rounded())
+            window.setFrame(NSRect(origin: origin, size: size), display: false)
         }
         window.setFrameAutosaveName(Self.frameAutosaveName)
 
@@ -94,9 +95,7 @@ final class ScreenshotEditorWindow: NSObject, NSWindowDelegate {
         hostingController.view.frame = NSRect(origin: .zero, size: window.contentRect(forFrameRect: window.frame).size)
         window.contentViewController = hostingController
         window.delegate = self
-        window.commandHandler = { [weak model] command in
-            model?.perform(command) ?? false
-        }
+        window.editor = model
 
         let toolbarController = EditorToolbarController(model: model)
         toolbarController.window = window
@@ -117,7 +116,7 @@ final class ScreenshotEditorWindow: NSObject, NSWindowDelegate {
         guard let closing = notification.object as? EditorWindow, closing === window else { return }
         model?.editorWillClose()
         // Release the SwiftUI hierarchy and the images right away.
-        closing.commandHandler = nil
+        closing.editor = nil
         closing.contentViewController = nil
         closing.delegate = nil
         closing.toolbar = nil
@@ -129,91 +128,83 @@ final class ScreenshotEditorWindow: NSObject, NSWindowDelegate {
 
 // MARK: - Editor Window
 
-/// The editor's window. It handles the editor's keyboard shortcuts itself, so they work even
-/// when the app has no menu bar (menu bar app / accessory mode).
+/// The editor's window. Menu commands (Save, Copy, Paste, Undo, zoom…) reach it through the
+/// responder chain and are validated here; a few plain keys (arrows, Esc, ⌫) are handled directly.
 final class EditorWindow: NSWindow {
-    /// Performs an editor command; returns `false` if it didn't apply.
-    var commandHandler: ((EditorCommand) -> Bool)?
+    weak var editor: ScreenshotEditorViewModel?
 
-    /// A text field is being edited: leave standard editing keys (⌘C, ⌘Z, arrows…) to it.
+    /// A text field is being edited: leave its keys (arrows, ⌫…) to it.
     private var isEditingText: Bool {
         firstResponder is NSText
-    }
-
-    // MARK: ⌘ Shortcuts
-
-    override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if let command = keyEquivalentCommand(for: event), commandHandler?(command) == true {
-            return true
-        }
-        return super.performKeyEquivalent(with: event)
-    }
-
-    private func keyEquivalentCommand(for event: NSEvent) -> EditorCommand? {
-        let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
-        guard modifiers.contains(.command), !modifiers.contains(.control),
-              let key = event.charactersIgnoringModifiers?.lowercased() else { return nil }
-        let shift = modifiers.contains(.shift)
-        let option = modifiers.contains(.option)
-
-        switch key {
-        case "w" where !shift && !option: return .close
-        case "s" where !option: return .save
-        case "o" where !shift && !option: return .addImage
-        case "i" where option && !shift: return .toggleInspector
-        case "c" where !shift && !option && !isEditingText: return .copy
-        case "z" where !option && !isEditingText: return shift ? .redo : .undo
-        case "=", "+": return .zoomIn
-        case "-", "_": return .zoomOut
-        case "0" where !shift && !option: return .zoomToFit
-        case "1" where !shift && !option: return .actualSize
-        default: return nil
-        }
     }
 
     // MARK: Plain Keys
 
     override func sendEvent(_ event: NSEvent) {
         if event.type == .keyDown, attachedSheet == nil, !isEditingText,
-           let command = plainKeyCommand(for: event), commandHandler?(command) == true {
+           let editor, handlePlainKey(event, editor: editor) {
             return
         }
         super.sendEvent(event)
     }
 
-    private func plainKeyCommand(for event: NSEvent) -> EditorCommand? {
-        let modifiers = event.modifierFlags.intersection([.command, .option, .control])
-        guard modifiers.isEmpty else { return nil }
+    /// Arrows nudge the selected layer (⇧ for 10 points), Esc deselects, ⌫ / ⌦ delete it.
+    private func handlePlainKey(_ event: NSEvent, editor: ScreenshotEditorViewModel) -> Bool {
+        guard event.modifierFlags.intersection([.command, .option, .control]).isEmpty else { return false }
         let step: CGFloat = event.modifierFlags.contains(.shift) ? 10 : 1
 
         switch Int(event.keyCode) {
-        case 51, 117: return .deleteSelection // ⌫, ⌦
-        case 53: return .deselect // Esc
-        case 123: return .nudge(dx: -step, dy: 0)
-        case 124: return .nudge(dx: step, dy: 0)
-        case 125: return .nudge(dx: 0, dy: step)
-        case 126: return .nudge(dx: 0, dy: -step)
-        default: return nil
+        case 51, 117: // ⌫, ⌦
+            guard editor.canDeleteSelection else { return false }
+            editor.removeSelectedItem()
+        case 53: // Esc
+            guard editor.selectedItemID != nil else { return false }
+            editor.selectedItemID = nil
+        case 123: return editor.nudgeSelection(dx: -step, dy: 0)
+        case 124: return editor.nudgeSelection(dx: step, dy: 0)
+        case 125: return editor.nudgeSelection(dx: 0, dy: step)
+        case 126: return editor.nudgeSelection(dx: 0, dy: -step)
+        default: return false
         }
+        return true
     }
 
     // MARK: Menu Actions
 
-    // When the app shows its menu bar, Edit and File menu items reach the editor through the responder chain.
+    @objc func saveDocument(_ sender: Any?) { editor?.save() }
+    @objc func copy(_ sender: Any?) { editor?.copyToClipboard() }
+    @objc func paste(_ sender: Any?) { editor?.pasteImage() }
+    @objc func delete(_ sender: Any?) { editor?.removeSelectedItem() }
+    @objc func undo(_ sender: Any?) { editor?.undo() }
+    @objc func redo(_ sender: Any?) { editor?.redo() }
+    @objc func zoomIn(_ sender: Any?) { editor?.zoomIn() }
+    @objc func zoomOut(_ sender: Any?) { editor?.zoomOut() }
+    @objc func zoomToActualSize(_ sender: Any?) { editor?.zoomToActualSize() }
+    @objc func zoomToFit(_ sender: Any?) { editor?.zoomToFit() }
+    @objc func toggleInspector(_ sender: Any?) { editor?.toggleInspector() }
 
-    @objc func copy(_ sender: Any?) {
-        _ = commandHandler?(.copy)
-    }
-
-    @objc func undo(_ sender: Any?) {
-        _ = commandHandler?(.undo)
-    }
-
-    @objc func redo(_ sender: Any?) {
-        _ = commandHandler?(.redo)
-    }
-
-    @objc func saveDocument(_ sender: Any?) {
-        _ = commandHandler?(.save)
+    override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        guard let editor, let action = menuItem.action else { return super.validateMenuItem(menuItem) }
+        switch action {
+        case #selector(saveDocument(_:)), #selector(copy(_:)):
+            return editor.canExport
+        case #selector(paste(_:)):
+            return editor.canPasteImage
+        case #selector(delete(_:)):
+            return editor.canDeleteSelection
+        case #selector(undo(_:)):
+            return editor.canUndo
+        case #selector(redo(_:)):
+            return editor.canRedo
+        case #selector(zoomIn(_:)), #selector(zoomOut(_:)), #selector(zoomToActualSize(_:)), #selector(zoomToFit(_:)):
+            return true
+        case #selector(toggleInspector(_:)):
+            menuItem.title = editor.isInspectorPresented
+                ? String(localized: "Hide Inspector")
+                : String(localized: "Show Inspector")
+            return true
+        default:
+            return super.validateMenuItem(menuItem)
+        }
     }
 }

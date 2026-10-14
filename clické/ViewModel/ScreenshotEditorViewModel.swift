@@ -11,14 +11,6 @@ struct RedactionRequest: Identifiable {
     let image: NSImage
 }
 
-/// Keyboard commands handled by the editor window (they work without a menu bar).
-enum EditorCommand {
-    case copy, save, close, undo, redo
-    case zoomIn, zoomOut, zoomToFit, actualSize
-    case deleteSelection, deselect, toggleInspector, addImage
-    case nudge(dx: CGFloat, dy: CGFloat)
-}
-
 // MARK: - ScreenshotEditorViewModel
 
 /// State and actions of the screenshot editor.
@@ -107,8 +99,6 @@ final class ScreenshotEditorViewModel {
     private var isRestoringSnapshot = false
     private var interactionDepth = 0
     private var commitTask: Task<Void, Never>?
-    /// Incremented on every document change.
-    private(set) var documentVersion = 0
 
     /// Style given to new layers: the last style edited, remembered across captures.
     private var layerStyleTemplate: LayerStyle
@@ -155,7 +145,6 @@ final class ScreenshotEditorViewModel {
     private var snapshot: EditorSnapshot { EditorSnapshot(config: config, items: items) }
 
     private func documentDidChange(from previous: EditorSnapshot) {
-        documentVersion &+= 1
         if !isRestoringSnapshot {
             history.willChange(from: previous)
             scheduleCommit()
@@ -454,8 +443,11 @@ final class ScreenshotEditorViewModel {
         }
     }
 
+    /// The selected layer can be deleted (the last layer can't).
+    var canDeleteSelection: Bool { items.count > 1 && selectedItem != nil }
+
     func removeSelectedItem() {
-        guard items.count > 1, let id = selectedItemID else { return }
+        guard canDeleteSelection, let id = selectedItemID else { return }
         items.removeAll { $0.id == id }
         selectedItemID = items.max { $0.zIndex < $1.zIndex }?.id
     }
@@ -477,14 +469,16 @@ final class ScreenshotEditorViewModel {
 
     func setScale(_ scale: Double, forItem id: UUID) {
         guard let index = index(of: id) else { return }
-        items[index].scale = min(max(scale, 5), 400)
+        items[index].scale = min(max(scale, CanvasItem.scaleRange.lowerBound), CanvasItem.scaleRange.upperBound)
     }
 
-    /// Moves the selected layer by a few canvas points (arrow keys).
-    func nudgeSelection(dx: CGFloat, dy: CGFloat) {
-        guard let id = selectedItemID, let index = index(of: id) else { return }
+    /// Moves the selected layer by a few canvas points (arrow keys). Returns `false` if nothing is selected.
+    @discardableResult
+    func nudgeSelection(dx: CGFloat, dy: CGFloat) -> Bool {
+        guard let id = selectedItemID, let index = index(of: id) else { return false }
         items[index].offset.width += dx
         items[index].offset.height += dy
+        return true
     }
 
     /// Centers the layers on the canvas (as a group, keeping their arrangement).
@@ -948,31 +942,42 @@ final class ScreenshotEditorViewModel {
 
     // MARK: - Commands
 
-    /// Handles a keyboard command. Returns `false` if it doesn't apply (the key event then continues).
-    func perform(_ command: EditorCommand) -> Bool {
-        switch command {
-        case .copy: copyToClipboard()
-        case .save: save()
-        case .close: window?.performClose(nil)
-        case .undo: undo()
-        case .redo: redo()
-        case .zoomIn: zoomIn()
-        case .zoomOut: zoomOut()
-        case .zoomToFit: zoomToFit()
-        case .actualSize: zoomToActualSize()
-        case .addImage: addImagesFromFile()
-        case .toggleInspector:
-            withEditorAnimation { isInspectorPresented.toggle() }
-        case .deleteSelection:
-            guard selectedItemID != nil, items.count > 1 else { return false }
-            removeSelectedItem()
-        case .deselect:
-            guard selectedItemID != nil else { return false }
-            selectedItemID = nil
-        case .nudge(let dx, let dy):
-            guard selectedItemID != nil else { return false }
-            nudgeSelection(dx: dx, dy: dy)
+    /// Whether Copy, Save and drag-out are available.
+    var canExport: Bool { !isExporting && !items.isEmpty }
+
+    func toggleInspector() {
+        withEditorAnimation { isInspectorPresented.toggle() }
+    }
+
+    /// File URLs of images (an image copied in Finder is pasted as the file, not as its icon).
+    private static let imageFileReadingOptions: [NSPasteboard.ReadingOptionKey: Any] = [
+        .urlReadingFileURLsOnly: true,
+        .urlReadingContentsConformToTypes: [UTType.image.identifier],
+    ]
+
+    /// Whether the clipboard holds an image or an image file (checks the types only).
+    var canPasteImage: Bool {
+        let pasteboard = NSPasteboard.general
+        return pasteboard.canReadObject(forClasses: [NSURL.self], options: Self.imageFileReadingOptions)
+            || pasteboard.canReadItem(withDataConformingToTypes: [UTType.image.identifier])
+    }
+
+    /// Adds the clipboard's images as new layers.
+    func pasteImage() {
+        let pasteboard = NSPasteboard.general
+        if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: Self.imageFileReadingOptions) as? [URL], !urls.isEmpty {
+            addImages(at: urls)
+            return
         }
-        return true
+        var pasted = false
+        for item in pasteboard.pasteboardItems ?? [] {
+            guard let type = item.types.first(where: { UTType($0.rawValue)?.conforms(to: .image) == true }),
+                  let data = item.data(forType: type) else { continue }
+            importData(data)
+            pasted = true
+        }
+        if !pasted {
+            NSSound.beep()
+        }
     }
 }

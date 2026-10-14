@@ -8,8 +8,9 @@ import CoreGraphics
 ///   A layer is drawn at `layerScale(for:)` canvas points per layer point.
 ///
 /// Export resolution:
-/// - **Auto** (no preset): the canvas wraps the largest layer plus padding, and is exported at that
-///   layer's native pixel density (2× for a Retina capture), so nothing gets downsampled.
+/// - **Auto** (no preset): the canvas wraps the largest layer plus padding, and is exported at the
+///   highest native pixel density among the layers (2× for a Retina capture, at most 4×), so
+///   nothing gets downsampled.
 /// - **Preset**: the canvas is `width × height` canvas points exported at 1×, i.e. exactly the
 ///   preset's pixel size; layers are scaled to fit inside the padding.
 ///
@@ -46,7 +47,8 @@ struct CanvasGeometry: Equatable {
         } else if let reference = Self.referenceItem(in: items) {
             let framed = Self.rotatedBounds(of: reference.framedSize, degrees: reference.rotation)
             size = CGSize(width: framed.width + padding * 2, height: framed.height + padding * 2)
-            let density = min(max(reference.image.pixelDensity, 1), 4)
+            // The sharpest layer sets the density, so no layer gets downsampled.
+            let density = min(max(items.map(\.image.pixelDensity).max() ?? 1, 1), 4)
             scale = max(min(density, Self.largestScale(fitting: size)), 1)
         } else {
             size = Self.emptyCanvasSize

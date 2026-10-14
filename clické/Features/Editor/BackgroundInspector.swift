@@ -78,7 +78,7 @@ private struct GradientOptions: View {
         LabeledContent("Colors") {
             HStack(spacing: 6) {
                 ForEach(model.config.gradient.colors.indices, id: \.self) { index in
-                    ColorPicker("Color \(index + 1)", selection: $model.config.gradient.colors[index].color, supportsOpacity: false)
+                    ColorPicker("Color \(index + 1)", selection: gradientColor(at: index), supportsOpacity: false)
                         .labelsHidden()
                 }
                 Button {
@@ -104,6 +104,21 @@ private struct GradientOptions: View {
         } label: {
             Label("Random Gradient", systemImage: "dice")
         }
+    }
+
+    /// A gradient stop's color. Bounds-checked: the color panel may still write to a stop
+    /// that "Remove Middle Color" just deleted.
+    private func gradientColor(at index: Int) -> Binding<Color> {
+        Binding(
+            get: {
+                let colors = model.config.gradient.colors
+                return colors.indices.contains(index) ? colors[index].color : .clear
+            },
+            set: { newValue in
+                guard model.config.gradient.colors.indices.contains(index) else { return }
+                model.config.gradient.colors[index] = RGBAColor(newValue)
+            }
+        )
     }
 
     private func toggleThirdColor() {

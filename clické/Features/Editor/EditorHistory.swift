@@ -21,7 +21,6 @@ struct EditorHistory {
 
     var canUndo: Bool { pendingStart != nil || !undoStack.isEmpty }
     var canRedo: Bool { !redoStack.isEmpty }
-    var hasPendingTransaction: Bool { pendingStart != nil }
 
     /// Records the state before a change (only the first change of a transaction matters).
     mutating func willChange(from snapshot: EditorSnapshot) {

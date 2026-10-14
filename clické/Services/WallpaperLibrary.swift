@@ -22,7 +22,6 @@ final class WallpaperLibrary {
 
     private(set) var entries: [Entry] = []
     private(set) var thumbnails: [BackgroundImageSource: CGImage] = [:]
-    private(set) var isLoading = false
     private var didStartLoading = false
 
     private init() {}
@@ -33,13 +32,11 @@ final class WallpaperLibrary {
     func loadIfNeeded() {
         guard !didStartLoading else { return }
         didStartLoading = true
-        isLoading = true
 
         Task {
             let bundled = await Self.discoverBundledWallpapers()
             let known = Set(entries.map(\.source))
             entries.append(contentsOf: bundled.filter { !known.contains($0.source) })
-            isLoading = false
             await loadThumbnails(for: bundled)
         }
     }

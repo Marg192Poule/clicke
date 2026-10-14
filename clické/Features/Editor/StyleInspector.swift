@@ -255,7 +255,7 @@ private struct TransformSection: View {
 
     var body: some View {
         Section("Transform") {
-            InspectorSlider("Size", value: $item.scale, in: 10...200, unit: .percent, defaultValue: 100)
+            InspectorSlider("Size", value: $item.scale, in: CanvasItem.scaleRange, unit: .percent, defaultValue: 100)
 
             LabeledContent("Rotation") {
                 HStack(spacing: 6) {

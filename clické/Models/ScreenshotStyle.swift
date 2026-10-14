@@ -48,7 +48,6 @@ nonisolated struct RGBAColor: Codable, Hashable, Sendable {
     var nsColor: NSColor { NSColor(srgbRed: red, green: green, blue: blue, alpha: alpha) }
 
     static let white = RGBAColor(red: 1, green: 1, blue: 1)
-    static let black = RGBAColor(red: 0, green: 0, blue: 0)
 }
 
 // MARK: - Background Type
@@ -458,7 +457,7 @@ struct CanvasItem: Identifiable, Equatable {
 
     /// Position of the layer's center relative to the canvas center, in canvas points.
     var offset: CGSize = .zero
-    /// Size in percent (100 = natural size, or "fit" for fixed-size canvases).
+    /// Size in percent (100 = natural size, or "fit" for fixed-size canvases), within `scaleRange`.
     var scale: Double = 100
     /// 2D rotation, in degrees.
     var rotation: Double = 0
@@ -467,6 +466,9 @@ struct CanvasItem: Identifiable, Equatable {
     var rotationY: Double = 0
     /// Stacking order (higher is in front).
     var zIndex: Double = 0
+
+    /// The sizes the Size slider and the resize handles allow, in percent.
+    static let scaleRange: ClosedRange<Double> = 10...400
 
     init(image: LayerImage, style: LayerStyle, id: UUID = UUID()) {
         self.id = id

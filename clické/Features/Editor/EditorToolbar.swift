@@ -160,7 +160,7 @@ final class EditorToolbarController: NSObject, NSToolbarDelegate {
     @objc private func redact() { model.redactSelectedLayer() }
     @objc private func save() { model.save() }
     @objc private func copyImage() { model.copyToClipboard() }
-    @objc private func toggleInspector() { _ = model.perform(.toggleInspector) }
+    @objc private func toggleInspector() { model.toggleInspector() }
 }
 
 private extension NSToolbarItem.Identifier {
