@@ -1,75 +1,33 @@
 import SwiftUI
 
-// classic toast
+/// The HUD shown by `ToastManager`: an icon and a short message on Liquid Glass.
 struct ToastView: View {
+    /// Already-localized message (shown verbatim).
     let message: String
-    let icon: String 
+    /// SF Symbol name.
+    let icon: String
     let success: Bool
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             Image(systemName: icon)
-                .font(.system(size: 16, weight: .medium))
+                .font(.system(size: 15, weight: .semibold))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(success ? Color.primary : Color.red)
+                .accessibilityHidden(true)
 
-                Text(message)
-                    .font(.system(size: 13, weight: .medium))
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .glassEffect(.regular)
-    }
-}
-
-// toast with edit button
-struct InteractiveToastView: View {
-    let message: String
-    let icon: String
-    let onEdit: () -> Void
-
-    @State private var isHovered = false 
-
-    var body: some View {
-        HStack(spacing: 12) {
-            // Status indicator
-            HStack(spacing: 8) {
-                Image(systemName: icon)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.white)
-                
-                Text(message)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.white)
-            }
-            
-            // Edit button
-            Button(action: onEdit) {
-                HStack(spacing: 6) {
-                    Image(systemName: "pencil.and.scribble")
-                        .font(.system(size: 12, weight: .semibold))
-                    Text("Edit")
-                        .font(.system(size: 12, weight: .semibold))
-                }
-                .foregroundColor(.white.opacity(0.9))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(Color.white.opacity(isHovered ? 0.1 : 0.05))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(Color.white.opacity(0.2), lineWidth: 1)
-                        )
-                )
-            }
-            .buttonStyle(.plain)
-            .onHover { hovering in
-                withAnimation(.easeInOut(duration: 0.15)) {
-                    isHovered = hovering
-                }
-            }
+            Text(message)
+                .font(.system(size: 13, weight: .semibold))
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: 360, alignment: .leading)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .glassEffect(.regular)
+        .glassEffect(.regular, in: .capsule)
+        // Room for the glass edge highlight and shadow inside the borderless panel.
+        .padding(12)
+        .accessibilityElement(children: .combine)
     }
 }
