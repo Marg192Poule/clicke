@@ -103,6 +103,10 @@ final class ScreenshotEditorViewModel {
     /// Style given to new layers: the last style edited, remembered across captures.
     private var layerStyleTemplate: LayerStyle
 
+    /// The document as last copied, saved or dragged out (or as it opened): closing the editor
+    /// asks for confirmation when the document differs from it.
+    @ObservationIgnored private var exportedSnapshot: EditorSnapshot?
+
     // MARK: Drag Export
 
     /// Folders of the files handed out by drag and drop, deleted when the editor closes.
@@ -130,15 +134,40 @@ final class ScreenshotEditorViewModel {
             wallpapers.addImportedImage(at: url)
         }
 
-        isRestoringSnapshot = true // the initial layers aren't an undoable change
+        isRestoringSnapshot = true // the initial layers aren't an undoable change, nor an edit
         addImages(images)
         isRestoringSnapshot = false
+        exportedSnapshot = snapshot
         updateBackgroundPreview()
         scheduleThumbnailRefresh()
     }
 
     /// Whether the editor has layers, or layers on the way.
     var hasContent: Bool { !items.isEmpty || pendingImportCount > 0 }
+
+    // MARK: - Unexported Changes
+
+    /// Whether the document changed since it was last copied, saved or dragged out.
+    var hasUnexportedChanges: Bool { !items.isEmpty && snapshot != exportedSnapshot }
+
+    private func markExported(_ exported: EditorSnapshot) {
+        exportedSnapshot = exported
+        updateDocumentEditedState()
+    }
+
+    /// The user chose "Don’t Save": the editor can close without asking again.
+    func discardChanges() {
+        markExported(snapshot)
+    }
+
+    /// The window's close button shows a dot while there are unexported changes.
+    private func updateDocumentEditedState() {
+        guard let window else { return }
+        let edited = hasUnexportedChanges
+        if window.isDocumentEdited != edited {
+            window.isDocumentEdited = edited
+        }
+    }
 
     // MARK: - Document Changes
 
@@ -157,6 +186,7 @@ final class ScreenshotEditorViewModel {
         }
         updateBackgroundPreview()
         scheduleThumbnailRefresh()
+        updateDocumentEditedState()
     }
 
     /// Marks the start of a continuous edit (slider or canvas drag): it becomes a single undo step.
@@ -414,13 +444,19 @@ final class ScreenshotEditorViewModel {
         importInBackground(fileName: nil, decode: work, fallback: { nil })
     }
 
+    /// Adds a layer decoded in the background. One of the images the editor opened with
+    /// (`isInitial`) isn't an undoable change, nor an edit to confirm on close.
     private func addImportedLayer(_ image: ImportedImage, isInitial: Bool) {
-        if isInitial {
-            isRestoringSnapshot = true
+        guard isInitial else {
             addLayer(image)
-            isRestoringSnapshot = false
-        } else {
-            addLayer(image)
+            return
+        }
+        let wasExported = !hasUnexportedChanges
+        isRestoringSnapshot = true
+        addLayer(image)
+        isRestoringSnapshot = false
+        if wasExported {
+            markExported(snapshot)
         }
     }
 
@@ -767,24 +803,36 @@ final class ScreenshotEditorViewModel {
     func copyToClipboard() {
         guard !isExporting, !items.isEmpty, checkExportLimits() else { return }
         isExporting = true
+        let exported = snapshot
+        let previouslyExported = exportedSnapshot
+        // Counts as exported right away, so closing the editor just after ⌘C doesn't ask.
+        markExported(exported)
         Task {
             defer { isExporting = false }
-            guard let output = await ScreenshotRenderer.render(config: config, items: items) else {
-                presentError(message: String(localized: "The image couldn’t be rendered."))
-                return
-            }
             do {
+                guard let output = await ScreenshotRenderer.render(config: exported.config, items: exported.items) else {
+                    throw ScreenshotRenderer.RenderError.failed
+                }
                 try await ScreenshotRenderer.copyToPasteboard(output)
                 ToastManager.shared.show(message: String(localized: "Copied"), icon: "doc.on.clipboard.fill", success: true)
             } catch {
+                if exportedSnapshot == exported {
+                    exportedSnapshot = previouslyExported
+                    updateDocumentEditedState()
+                }
                 presentError(error, message: String(localized: "The image couldn’t be copied."))
             }
         }
     }
 
     /// Shows a save panel and writes the result in the chosen format.
-    func save() {
-        guard !isExporting, !items.isEmpty, let window, checkExportLimits() else { return }
+    /// - Parameter completion: Called with `true` once the file is written, `false` if the user
+    ///   cancelled or the export failed.
+    func save(completion: ((Bool) -> Void)? = nil) {
+        guard !isExporting, !items.isEmpty, let window, checkExportLimits() else {
+            completion?(false)
+            return
+        }
         let panel = NSSavePanel()
         panel.canCreateDirectories = true
         panel.isExtensionHidden = false
@@ -800,26 +848,32 @@ final class ScreenshotEditorViewModel {
         panel.accessoryView = accessory
 
         panel.beginSheetModal(for: window) { [weak self] response in
-            guard response == .OK, let url = panel.url else { return }
-            self?.export(to: url)
+            guard let self, response == .OK, let url = panel.url else {
+                completion?(false)
+                return
+            }
+            export(to: url, completion: completion)
         }
     }
 
-    private func export(to url: URL) {
+    private func export(to url: URL, completion: ((Bool) -> Void)?) {
         isExporting = true
+        let exported = snapshot
         let format = exportFormat
         let quality = jpegQuality
         Task {
             defer { isExporting = false }
-            guard let output = await ScreenshotRenderer.render(config: config, items: items) else {
-                presentError(message: String(localized: "The image couldn’t be rendered."))
-                return
-            }
             do {
+                guard let output = await ScreenshotRenderer.render(config: exported.config, items: exported.items) else {
+                    throw ScreenshotRenderer.RenderError.failed
+                }
                 try await ScreenshotRenderer.write(output, to: url, format: format, jpegQuality: quality)
+                markExported(exported)
                 ToastManager.shared.show(message: String(localized: "Saved"), icon: "checkmark.circle.fill", success: true)
+                completion?(true)
             } catch {
                 presentError(error, message: String(localized: "The image couldn’t be saved."))
+                completion?(false)
             }
         }
     }
@@ -897,7 +951,9 @@ final class ScreenshotEditorViewModel {
                 jpegQuality: jpegQuality,
                 fileName: "\(baseName).\(format.fileExtension)"
             ) { [weak self] url in
-                self?.dragFileFolders.append(url.deletingLastPathComponent())
+                guard let self else { return }
+                dragFileFolders.append(url.deletingLastPathComponent())
+                markExported(exported)
             }
         )
         return provider

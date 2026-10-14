@@ -30,8 +30,15 @@ final class ScreenshotEditorWindow: NSObject, NSWindowDelegate {
         guard !images.isEmpty else { return }
 
         if let model {
-            model.addImages(images)
+            let added = model.addImages(images)
             bringToFront()
+            if added > 0 {
+                ToastManager.shared.show(
+                    message: added == 1 ? String(localized: "Added as a New Layer") : String(localized: "Added as New Layers"),
+                    icon: "square.2.layers.3d.top.filled",
+                    success: true
+                )
+            }
             return
         }
 
@@ -55,13 +62,47 @@ final class ScreenshotEditorWindow: NSObject, NSWindowDelegate {
     }
 
     /// Whether the open editor holds edits that were never copied, saved or dragged out.
-    /// (Contract for the app delegate's quit confirmation; implemented by the editor.)
-    var hasUnexportedChanges: Bool { false }
+    /// (Used by the app delegate's quit confirmation.)
+    var hasUnexportedChanges: Bool { model?.hasUnexportedChanges ?? false }
 
-    /// Asks the user what to do with unexported edits (Save… / Don't Save / Cancel) if there are any.
+    /// Asks the user what to do with unexported edits (Save… / Cancel / Don’t Save) if there are any.
     /// Calls `completion(true)` when it's fine to close/quit, `false` if the user cancelled.
     func confirmDiscardingChanges(_ completion: @escaping (Bool) -> Void) {
-        completion(true)
+        guard let window, let model, model.hasUnexportedChanges else {
+            completion(true)
+            return
+        }
+        bringToFront()
+        // A sheet is already open (Save panel, redaction, this very question…): let the user finish it.
+        guard window.attachedSheet == nil else {
+            NSSound.beep()
+            completion(false)
+            return
+        }
+
+        let alert = NSAlert()
+        alert.messageText = String(localized: "Do you want to save the changes you made to this screenshot?")
+        alert.informativeText = String(localized: "Your changes will be lost if you don’t save or copy them.")
+        alert.addButton(withTitle: String(localized: "Save…"))
+        let cancel = alert.addButton(withTitle: String(localized: "Cancel"))
+        cancel.keyEquivalent = "\u{1b}"
+        let dontSave = alert.addButton(withTitle: String(localized: "Don’t Save"))
+        dontSave.hasDestructiveAction = true
+        dontSave.keyEquivalent = "d"
+        dontSave.keyEquivalentModifierMask = .command
+
+        alert.beginSheetModal(for: window) { [weak model] response in
+            switch response {
+            case .alertFirstButtonReturn:
+                guard let model else { return completion(true) }
+                model.save(completion: completion)
+            case .alertThirdButtonReturn:
+                model?.discardChanges()
+                completion(true)
+            default:
+                completion(false)
+            }
+        }
     }
 
     // MARK: - Window
@@ -111,6 +152,17 @@ final class ScreenshotEditorWindow: NSObject, NSWindowDelegate {
     }
 
     // MARK: - NSWindowDelegate
+
+    /// Close button, ⌘W and File ▸ Close: ask first if the edits were never exported.
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard sender === window, hasUnexportedChanges else { return true }
+        confirmDiscardingChanges { [weak self] canClose in
+            if canClose {
+                self?.window?.close()
+            }
+        }
+        return false
+    }
 
     func windowWillClose(_ notification: Notification) {
         guard let closing = notification.object as? EditorWindow, closing === window else { return }
