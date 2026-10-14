@@ -282,6 +282,8 @@ final class ScreenshotEditorViewModel {
         backgroundTask?.cancel()
         thumbnailTask?.cancel()
         removeDragFiles()
+        // The decoded backgrounds are only useful while an editor is open.
+        ImageLoadingService.cache.removeAll()
     }
 
     // MARK: - Layers
@@ -295,16 +297,10 @@ final class ScreenshotEditorViewModel {
         items.firstIndex { $0.id == id }
     }
 
-    /// A binding to a layer that stays valid if the layer is removed (writes are then ignored).
-    func binding(forItem id: UUID) -> Binding<CanvasItem>? {
-        guard let current = items.first(where: { $0.id == id }) else { return nil }
-        return Binding(
-            get: { [weak self] in self?.items.first { $0.id == id } ?? current },
-            set: { [weak self] newValue in
-                guard let self, let index = self.index(of: id) else { return }
-                self.items[index] = newValue
-            }
-        )
+    /// Edits a layer in place (ignored if the layer was removed meanwhile).
+    func updateItem(_ id: UUID, _ change: (inout CanvasItem) -> Void) {
+        guard let index = index(of: id) else { return }
+        change(&items[index])
     }
 
     /// Adds a bitmap as a new layer (selected, slightly offset from the previous ones).
@@ -799,7 +795,8 @@ final class ScreenshotEditorViewModel {
 
     // MARK: - Export
 
-    /// Copies the result to the clipboard (PNG + TIFF).
+    /// Copies the result to the clipboard: PNG, encoded off the main actor (TIFF is only produced
+    /// if an app asks for it, see `PasteboardWriter`).
     func copyToClipboard() {
         guard !isExporting, !items.isEmpty, checkExportLimits() else { return }
         isExporting = true
@@ -811,9 +808,12 @@ final class ScreenshotEditorViewModel {
             defer { isExporting = false }
             do {
                 guard let output = await ScreenshotRenderer.render(config: exported.config, items: exported.items) else {
-                    throw ScreenshotRenderer.RenderError.failed
+                    throw ScreenshotRenderer.ExportError.renderingFailed
                 }
-                try await ScreenshotRenderer.copyToPasteboard(output)
+                let png = try await ScreenshotRenderer.pngData(for: output)
+                guard PasteboardWriter.writePNG(png) else {
+                    throw ScreenshotRenderer.ExportError.pasteboardRefused
+                }
                 ToastManager.shared.show(message: String(localized: "Copied"), icon: "doc.on.clipboard.fill", success: true)
             } catch {
                 if exportedSnapshot == exported {
@@ -865,7 +865,7 @@ final class ScreenshotEditorViewModel {
             defer { isExporting = false }
             do {
                 guard let output = await ScreenshotRenderer.render(config: exported.config, items: exported.items) else {
-                    throw ScreenshotRenderer.RenderError.failed
+                    throw ScreenshotRenderer.ExportError.renderingFailed
                 }
                 try await ScreenshotRenderer.write(output, to: url, format: format, jpegQuality: quality)
                 markExported(exported)
@@ -971,7 +971,7 @@ final class ScreenshotEditorViewModel {
         { completion in
             Task.detached(priority: .userInitiated) {
                 do {
-                    guard let output = await render.value else { throw ScreenshotRenderer.RenderError.failed }
+                    guard let output = await render.value else { throw ScreenshotRenderer.ExportError.renderingFailed }
                     let data = try ImageEncoder.data(for: output.image, format: format, jpegQuality: jpegQuality, pixelDensity: output.pixelDensity)
                     let url = try await MainActor.run {
                         let url = try CaptureTemporaryStorage.writeDragFile(data, named: fileName)

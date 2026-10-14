@@ -24,30 +24,43 @@ enum SliderUnit {
 
 /// A labeled slider with its value, updating the canvas live while dragging.
 /// Right-click offers "Reset" when a default value is given.
-struct InspectorSlider: View {
+///
+/// It takes a plain value and a setter (not a binding) and is `Equatable` on its inputs, so with
+/// `.equatable()` a slider only redraws when its own value changes: dragging one slider doesn't
+/// redraw the others. The setter must not depend on anything else that changes (give the section
+/// an `.id` when it edits a different layer).
+struct InspectorSlider: View, Equatable {
     let title: LocalizedStringKey
-    @Binding var value: Double
+    let value: Double
     let range: ClosedRange<Double>
     var step: Double?
     var unit: SliderUnit = .none
     var defaultValue: Double?
+    let onChange: (Double) -> Void
 
     @Environment(\.editorInteraction) private var interaction
 
     init(
         _ title: LocalizedStringKey,
-        value: Binding<Double>,
+        value: Double,
         in range: ClosedRange<Double>,
         step: Double? = nil,
         unit: SliderUnit = .none,
-        defaultValue: Double? = nil
+        defaultValue: Double? = nil,
+        onChange: @escaping (Double) -> Void
     ) {
         self.title = title
-        self._value = value
+        self.value = value
         self.range = range
         self.step = step
         self.unit = unit
         self.defaultValue = defaultValue
+        self.onChange = onChange
+    }
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.title == rhs.title && lhs.value == rhs.value && lhs.range == rhs.range
+            && lhs.step == rhs.step && lhs.unit == rhs.unit && lhs.defaultValue == rhs.defaultValue
     }
 
     var body: some View {
@@ -69,7 +82,7 @@ struct InspectorSlider: View {
             if let defaultValue {
                 Button("Reset") {
                     interaction.begin()
-                    value = defaultValue
+                    onChange(defaultValue)
                     interaction.end()
                 }
                 .disabled(value == defaultValue)
@@ -79,10 +92,11 @@ struct InspectorSlider: View {
 
     @ViewBuilder
     private var slider: some View {
+        let binding = Binding(get: { value }, set: onChange)
         if let step {
-            Slider(value: $value, in: range, step: step, onEditingChanged: editingChanged)
+            Slider(value: binding, in: range, step: step, onEditingChanged: editingChanged)
         } else {
-            Slider(value: $value, in: range, onEditingChanged: editingChanged)
+            Slider(value: binding, in: range, onEditingChanged: editingChanged)
         }
     }
 

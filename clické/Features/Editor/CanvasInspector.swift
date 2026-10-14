@@ -1,25 +1,21 @@
 import SwiftUI
 
 /// The Canvas page: canvas size presets, padding, export format and style reset.
+///
+/// The parts are `Equatable` views fed with plain values, so dragging the padding slider only
+/// redraws that slider and the image size.
 struct CanvasInspector: View {
-    @Bindable var model: ScreenshotEditorViewModel
+    let model: ScreenshotEditorViewModel
 
     var body: some View {
-        Section("Size") {
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3), spacing: 8) {
-                SizeTile(preset: nil, isSelected: model.config.canvasPresetID == nil) {
-                    model.config.canvasPresetID = nil
-                }
-                ForEach(SocialMediaPreset.presets) { preset in
-                    SizeTile(preset: preset, isSelected: model.config.canvasPresetID == preset.id) {
-                        model.config.canvasPresetID = preset.id
-                    }
-                }
-            }
-        }
+        SizeSection(selectedPresetID: model.config.canvasPresetID) { model.config.canvasPresetID = $0 }
+            .equatable()
 
         Section("Layout") {
-            InspectorSlider("Padding", value: $model.config.padding, in: 0...400, unit: .points, defaultValue: ScreenshotStyleConfig.default.padding)
+            InspectorSlider("Padding", value: model.config.padding, in: 0...400, unit: .points, defaultValue: ScreenshotStyleConfig.default.padding) {
+                model.config.padding = $0
+            }
+            .equatable()
             LabeledContent("Position") {
                 Button("Center Layers") {
                     model.centerLayers()
@@ -28,23 +24,14 @@ struct CanvasInspector: View {
             }
         }
 
-        Section("Export") {
-            Picker("Format", selection: $model.exportFormat) {
-                ForEach(ExportFormat.allCases) { format in
-                    Text(format.displayName).tag(format)
-                }
-            }
-            .pickerStyle(.segmented)
-
-            if model.exportFormat == .jpeg {
-                InspectorSlider("Quality", value: $model.jpegQuality, in: 0.3...1, unit: .fraction, defaultValue: 0.9)
-            }
-
-            LabeledContent("Image Size") {
-                Text(model.geometry.pixelSizeDescription)
-                    .monospacedDigit()
-            }
-        }
+        ExportSection(
+            format: model.exportFormat,
+            jpegQuality: model.jpegQuality,
+            pixelSizeDescription: model.geometry.pixelSizeDescription,
+            onFormatChange: { model.exportFormat = $0 },
+            onQualityChange: { model.jpegQuality = $0 }
+        )
+        .equatable()
 
         Section {
             Button("Reset Style") {
@@ -54,6 +41,66 @@ struct CanvasInspector: View {
             Text("New screenshots open with the style you used last. Reset Style restores the default background, frame, corners and shadow.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+        }
+    }
+}
+
+// MARK: - Size
+
+/// The canvas size grid; it only redraws when the selected size changes.
+private struct SizeSection: View, Equatable {
+    let selectedPresetID: String?
+    let onSelect: (String?) -> Void
+
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.selectedPresetID == rhs.selectedPresetID }
+
+    var body: some View {
+        Section("Size") {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3), spacing: 8) {
+                SizeTile(preset: nil, isSelected: selectedPresetID == nil) {
+                    onSelect(nil)
+                }
+                ForEach(SocialMediaPreset.presets) { preset in
+                    SizeTile(preset: preset, isSelected: selectedPresetID == preset.id) {
+                        onSelect(preset.id)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Export
+
+private struct ExportSection: View, Equatable {
+    let format: ExportFormat
+    let jpegQuality: Double
+    let pixelSizeDescription: String
+    let onFormatChange: (ExportFormat) -> Void
+    let onQualityChange: (Double) -> Void
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.format == rhs.format && lhs.jpegQuality == rhs.jpegQuality && lhs.pixelSizeDescription == rhs.pixelSizeDescription
+    }
+
+    var body: some View {
+        Section("Export") {
+            Picker("Format", selection: Binding(get: { format }, set: onFormatChange)) {
+                ForEach(ExportFormat.allCases) { format in
+                    Text(format.displayName).tag(format)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            if format == .jpeg {
+                InspectorSlider("Quality", value: jpegQuality, in: 0.3...1, unit: .fraction, defaultValue: 0.9, onChange: onQualityChange)
+                    .equatable()
+            }
+
+            LabeledContent("Image Size") {
+                Text(pixelSizeDescription)
+                    .monospacedDigit()
+            }
         }
     }
 }

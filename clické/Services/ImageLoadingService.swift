@@ -27,6 +27,10 @@ nonisolated final class ImageCache: @unchecked Sendable {
             }
         }
     }
+
+    func removeAll() {
+        cache.removeAllObjects()
+    }
 }
 
 // MARK: - Image Loading Service
@@ -37,8 +41,9 @@ nonisolated final class ImageCache: @unchecked Sendable {
 /// JPEG and HEIC straight to the requested size, which is much faster (and lighter) than
 /// decoding the full image and resizing it.
 nonisolated enum ImageLoadingService {
-    /// Decoded background images at the sizes the editor asked for (canvas previews, exports).
-    static let cache = ImageCache(totalCostLimit: 192 * 1024 * 1024)
+    /// Decoded backgrounds at the sizes the canvas displays them (a few previews of a few MB each).
+    /// Emptied when the editor closes.
+    static let cache = ImageCache(totalCostLimit: 64 * 1024 * 1024)
 
     // MARK: Metadata
 
@@ -71,11 +76,6 @@ nonisolated enum ImageLoadingService {
     /// The requested size is rounded up to a 256 px step so small size changes reuse the cache.
     @concurrent
     static func cachedImage(at url: URL, covering targetSize: CGSize) async -> CGImage? {
-        cachedImageSync(at: url, covering: targetSize)
-    }
-
-    /// Synchronous variant of `cachedImage(at:covering:)`.
-    static func cachedImageSync(at url: URL, covering targetSize: CGSize) -> CGImage? {
         let sourceSize = pixelSize(of: url) ?? targetSize
         let needed = coverPixelSize(source: sourceSize, target: targetSize)
         let nativeMax = Int(max(sourceSize.width, sourceSize.height))
@@ -86,6 +86,13 @@ nonisolated enum ImageLoadingService {
         let image = loadImageSync(at: url, maxPixelSize: bucket)
         if let image { cache[key] = image }
         return image
+    }
+
+    /// Decodes an image just large enough to cover `targetSize` pixels aspect-fill, without caching.
+    @concurrent
+    static func image(at url: URL, covering targetSize: CGSize) async -> CGImage? {
+        let sourceSize = pixelSize(of: url) ?? targetSize
+        return loadImageSync(at: url, maxPixelSize: coverPixelSize(source: sourceSize, target: targetSize))
     }
 
     /// Synchronous decoding. Only call it off the main actor, or for a small image.

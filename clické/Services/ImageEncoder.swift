@@ -21,19 +21,16 @@ nonisolated enum ImageEncoder {
     static func data(for image: CGImage, format: ExportFormat, jpegQuality: Double = 0.9, pixelDensity: CGFloat = 1) throws -> Data {
         switch format {
         case .png:
-            return try encode(image, type: .png, properties: dpiProperties(pixelDensity), formatName: "PNG")
+            var properties = dpiProperties(pixelDensity)
+            // The "sub" filter alone encodes about twice as fast as the adaptive default,
+            // for files only a few percent larger.
+            properties[kCGImagePropertyPNGDictionary] = [kCGImagePropertyPNGCompressionFilter: IMAGEIO_PNG_FILTER_SUB]
+            return try encode(image, type: .png, properties: properties, formatName: "PNG")
         case .jpeg:
             var properties = dpiProperties(pixelDensity)
             properties[kCGImageDestinationLossyCompressionQuality] = min(max(jpegQuality, 0), 1)
             return try encode(flattened(image), type: .jpeg, properties: properties, formatName: "JPEG")
         }
-    }
-
-    /// TIFF (LZW compressed, alpha preserved), for apps that only read TIFF from the clipboard.
-    static func tiffData(for image: CGImage, pixelDensity: CGFloat = 1) throws -> Data {
-        var properties = dpiProperties(pixelDensity)
-        properties[kCGImagePropertyTIFFDictionary] = [kCGImagePropertyTIFFCompression: 5] // LZW
-        return try encode(image, type: .tiff, properties: properties, formatName: "TIFF")
     }
 
     // MARK: Private
