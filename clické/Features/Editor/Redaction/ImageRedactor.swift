@@ -8,12 +8,13 @@ import os
 ///
 /// Region rectangles are expressed in the full-resolution pixel space of the source image,
 /// with the origin at the top-left. Everything here is thread-safe and meant to run off the
-/// main actor.
+/// main actor. Renders use a Core Image context owned by the caller, who releases it when the
+/// editing session ends so its caches don't outlive the sheet.
 nonisolated enum ImageRedactor {
 
     // MARK: - Types
 
-    /// A downscaled copy of the source image, used to render the live preview quickly.
+    /// A downscaled copy of the source image, used to display it and render the live preview quickly.
     struct WorkingCopy: Sendable {
         let image: CGImage
         /// Working-copy pixels per source pixel (at most 1).
@@ -47,25 +48,34 @@ nonisolated enum ImageRedactor {
         let sourceRect: CGRect
     }
 
-    // MARK: - Shared State
+    // MARK: - Context
 
-    /// Core Image contexts are thread-safe; one is shared by all renders.
-    private static let context = CIContext(options: [.cacheIntermediates: false, .name: "Redaction"])
+    /// A Core Image context for the renders of one editing session.
+    static func makeContext() -> CIContext {
+        CIContext(options: [.cacheIntermediates: false, .name: "Redaction"])
+    }
+
     private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "clicke", category: "Redaction")
 
     // MARK: - Final Render
 
     /// Returns a copy of `image` with `regions` baked into its pixels, rendered off the main actor.
     @concurrent
-    static func redacting(_ image: CGImage, regions: [RedactionRegion], pixelsPerPoint: CGFloat) async -> CGImage? {
-        redact(image, regions: regions, pixelsPerPoint: pixelsPerPoint)
+    static func redacting(
+        _ image: CGImage,
+        regions: [RedactionRegion],
+        pixelsPerPoint: CGFloat,
+        context: CIContext
+    ) async -> CGImage? {
+        redact(image, regions: regions, pixelsPerPoint: pixelsPerPoint, context: context)
     }
 
-    /// Returns a copy of `image` with `regions` baked into its pixels, at full resolution.
+    /// Returns a copy of `image` with `regions` baked into its pixels, at full resolution and in
+    /// the image's color space.
     ///
     /// Pixels outside the regions are copied untouched. If an effect fails to render, its
     /// region is filled with black rather than left readable.
-    static func redact(_ image: CGImage, regions: [RedactionRegion], pixelsPerPoint: CGFloat) -> CGImage? {
+    static func redact(_ image: CGImage, regions: [RedactionRegion], pixelsPerPoint: CGFloat, context: CIContext) -> CGImage? {
         let width = image.width
         let height = image.height
         guard let canvas = makeBitmapContext(width: width, height: height, colorSpace: renderColorSpace(for: image)) else {
@@ -79,7 +89,6 @@ nonisolated enum ImageRedactor {
         canvas.setBlendMode(.copy)
         canvas.interpolationQuality = .none
 
-        let source = CIImage(cgImage: image)
         for region in RedactionRegion.compositingOrder(regions) {
             guard let rect = pixelRect(region.rect, in: imageSize) else { continue }
             let drawRect = flipped(rect, height: imageSize.height)
@@ -89,10 +98,11 @@ nonisolated enum ImageRedactor {
                     style: region.style,
                     strength: region.strength,
                     rect: rect,
-                    source: source,
+                    source: image,
                     pixelsPerPoint: pixelsPerPoint,
                     scale: 1,
-                    colorSpace: canvas.colorSpace
+                    colorSpace: canvas.colorSpace,
+                    context: context
                 ) {
                     canvas.draw(patch, in: drawRect)
                     continue
@@ -143,18 +153,18 @@ nonisolated enum ImageRedactor {
 
     /// Renders the requested preview patches from the working copy, off the main actor.
     @concurrent
-    static func renderPreviewPatches(_ requests: [PatchRequest], in copy: WorkingCopy) async -> [PreviewPatch] {
-        let source = CIImage(cgImage: copy.image)
+    static func renderPreviewPatches(_ requests: [PatchRequest], in copy: WorkingCopy, context: CIContext) async -> [PreviewPatch] {
         let colorSpace = renderColorSpace(for: copy.image)
         return requests.compactMap { request in
             guard let image = renderPatch(
                 style: request.key.style,
                 strength: request.key.strength,
                 rect: request.key.rect,
-                source: source,
+                source: copy.image,
                 pixelsPerPoint: copy.pixelsPerPoint,
                 scale: copy.scale,
-                colorSpace: colorSpace
+                colorSpace: colorSpace,
+                context: context
             ) else { return nil }
 
             let rect = request.key.rect
@@ -208,19 +218,24 @@ nonisolated enum ImageRedactor {
         CGRect(x: rect.minX, y: height - rect.maxY, width: rect.width, height: rect.height)
     }
 
-    /// Renders one region's effect, cropped to `rect` (top-left origin, integral).
+    /// Renders one region's effect, cropped to `rect` (top-left origin, integral, inside `source`).
     private static func renderPatch(
         style: RedactionStyle,
         strength: Double,
         rect: CGRect,
-        source: CIImage,
+        source: CGImage,
         pixelsPerPoint: CGFloat,
         scale: CGFloat,
-        colorSpace: CGColorSpace?
+        colorSpace: CGColorSpace?,
+        context: CIContext
     ) -> CGImage? {
-        let ciRect = flipped(rect, height: source.extent.height)
-        // Clamping the cropped area keeps the effect from sampling pixels outside the region.
-        let isolated = source.cropped(to: ciRect).clampedToExtent()
+        // Only the region's pixels go to Core Image, not the whole (possibly 5K) image: the effect
+        // never needs more, since clamping to the region keeps it from sampling pixels outside it.
+        guard style != .solid, let pixels = source.cropping(to: rect) else { return nil }
+        let ciRect = flipped(rect, height: CGFloat(source.height))
+        let isolated = CIImage(cgImage: pixels)
+            .transformed(by: CGAffineTransform(translationX: ciRect.minX, y: ciRect.minY))
+            .clampedToExtent()
 
         let output: CIImage?
         switch style {

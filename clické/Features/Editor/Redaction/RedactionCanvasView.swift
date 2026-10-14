@@ -53,7 +53,9 @@ struct RedactionCanvasTransform {
 struct RedactionCanvasView: View {
     let model: RedactionEditorModel
 
-    @State private var hoverLocation: CGPoint?
+    /// What the pointer is over. Only updated when it changes, so moving the pointer doesn't
+    /// re-render the canvas.
+    @State private var hoverTarget: RedactionHitTarget?
     @GestureState private var isPressing = false
     /// The canvas takes keyboard focus so Delete reaches it.
     @FocusState private var isFocused: Bool
@@ -87,13 +89,18 @@ struct RedactionCanvasView: View {
             .gesture(pressGesture(transform), including: model.canEdit ? .all : .subviews)
             .onContinuousHover(coordinateSpace: .named(Self.coordinateSpace)) { phase in
                 switch phase {
-                case .active(let location): hoverLocation = location
-                case .ended: hoverLocation = nil
+                case .active(let location): updateHover(hitTarget(at: location, transform))
+                case .ended: updateHover(nil)
                 }
             }
-            .pointerStyle(pointerStyle(transform))
+            .pointerStyle(pointerStyle)
         }
         .clipped()
+        .overlay {
+            if model.loadFailed {
+                ContentUnavailableView("Can’t Open Image", systemImage: "photo", description: Text("The image couldn’t be read."))
+            }
+        }
         .onChange(of: isPressing) { _, pressing in
             // Also covers gestures cancelled without an end event.
             if !pressing { model.endInteraction() }
@@ -110,20 +117,24 @@ struct RedactionCanvasView: View {
         }
         .onAppear { isFocused = true }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Screenshot")
+        .accessibilityLabel("Image")
         .accessibilityHint("Drag across the image to hide an area.")
     }
 
     // MARK: Layers
 
+    /// The working copy of the pixels being redacted: never another representation of the
+    /// image, and at most 2560 pixels long however large the original is.
+    @ViewBuilder
     private func imageLayer(_ transform: RedactionCanvasTransform) -> some View {
-        let rect = transform.imageRect
-        return Image(nsImage: model.image)
-            .resizable()
-            .interpolation(.high)
-            .frame(width: rect.width, height: rect.height)
-            .position(x: rect.midX, y: rect.midY)
-            .accessibilityHidden(true)
+        if let image = model.displayImage {
+            let rect = transform.imageRect
+            Image(decorative: image, scale: 1)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: rect.width, height: rect.height)
+                .position(x: rect.midX, y: rect.midY)
+        }
     }
 
     /// The live preview of each region's effect.
@@ -151,7 +162,7 @@ struct RedactionCanvasView: View {
     /// Region outlines, the draft outline and the selection handles.
     @ViewBuilder
     private func outlinesLayer(_ transform: RedactionCanvasTransform) -> some View {
-        let hovered = hoveredRegionID(transform)
+        let hovered = hoveredRegionID
 
         ForEach(Array(model.orderedRegions.enumerated()), id: \.element.id) { index, region in
             let rect = transform.viewRect(fromPixel: region.rect)
@@ -223,7 +234,6 @@ struct RedactionCanvasView: View {
                 isPressing = true
             }
             .onChanged { value in
-                hoverLocation = value.location
                 if model.interactionKind == nil {
                     isFocused = true
                     model.beginInteraction(
@@ -234,9 +244,17 @@ struct RedactionCanvasView: View {
                 }
                 model.updateInteraction(to: transform.pixelPoint(fromView: value.location))
             }
-            .onEnded { _ in
+            .onEnded { value in
                 model.endInteraction()
+                // Hover events pause during a drag; refresh what's under the pointer now.
+                updateHover(hitTarget(at: value.location, transform))
             }
+    }
+
+    private func updateHover(_ target: RedactionHitTarget?) {
+        if target != hoverTarget {
+            hoverTarget = target
+        }
     }
 
     private func hitTarget(at point: CGPoint, _ transform: RedactionCanvasTransform) -> RedactionHitTarget {
@@ -256,16 +274,16 @@ struct RedactionCanvasView: View {
         return transform.imageRect.insetBy(dx: -padding / 2, dy: -padding / 2).contains(point) ? .image : .outside
     }
 
-    private func hoveredRegionID(_ transform: RedactionCanvasTransform) -> UUID? {
-        guard model.interactionKind == nil, let hoverLocation else { return nil }
-        switch hitTarget(at: hoverLocation, transform) {
+    private var hoveredRegionID: UUID? {
+        guard model.interactionKind == nil else { return nil }
+        switch hoverTarget {
         case .region(let id), .handle(let id, _): return id
-        case .image, .outside: return nil
+        case .image, .outside, nil: return nil
         }
     }
 
-    private func pointerStyle(_ transform: RedactionCanvasTransform) -> PointerStyle? {
-        guard model.canEdit else { return nil }
+    private var pointerStyle: PointerStyle? {
+        guard model.canEdit, !model.isApplying else { return nil }
         switch model.interactionKind {
         case .drawing: return .rectSelection
         case .moving: return .grabActive
@@ -273,12 +291,11 @@ struct RedactionCanvasView: View {
         case nil: break
         }
 
-        guard let hoverLocation else { return nil }
-        switch hitTarget(at: hoverLocation, transform) {
+        switch hoverTarget {
         case .handle(_, let corner): return .frameResize(position: corner.resizePosition)
         case .region: return .grabIdle
         case .image: return .rectSelection
-        case .outside: return nil
+        case .outside, nil: return nil
         }
     }
 }
