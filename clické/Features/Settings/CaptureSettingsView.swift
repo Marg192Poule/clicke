@@ -1,14 +1,11 @@
 import SwiftUI
 import AppKit
-import CoreGraphics
 
 // MARK: - Capture Settings
 
 /// Capture tab: what happens after a capture, clipboard, auto-save folder and Screen Recording permission.
 struct CaptureSettingsView: View {
     @Bindable var model: SettingsModel
-
-    @State private var hasScreenRecordingAccess = CGPreflightScreenCaptureAccess()
 
     var body: some View {
         Form {
@@ -26,12 +23,12 @@ struct CaptureSettingsView: View {
             }
 
             Section {
-                Toggle("Save captures automatically", isOn: $model.settings.autoSaveCaptures)
+                Toggle("Save screenshots automatically", isOn: $model.settings.autoSaveCaptures)
                 SaveFolderRow(model: model)
             } footer: {
-                if capturesAreDiscarded {
+                if screenshotsAreDiscarded {
                     Label(
-                        "Captures won’t be kept. Turn on “Copy to clipboard” or “Save captures automatically”.",
+                        "Screenshots won’t be kept. Turn on “Copy to clipboard” or “Save screenshots automatically”.",
                         systemImage: "exclamationmark.triangle.fill"
                     )
                     .symbolRenderingMode(.multicolor)
@@ -39,22 +36,17 @@ struct CaptureSettingsView: View {
             }
 
             Section("Permissions") {
-                ScreenRecordingPermissionRow(hasAccess: hasScreenRecordingAccess)
+                ScreenRecordingPermissionRow(hasAccess: model.hasScreenRecordingAccess)
             }
         }
         .formStyle(.grouped)
         .scrollDisabled(true)
-        .onAppearAndAppActivation(perform: refreshPermissionStatus)
     }
 
-    /// With "Do Nothing" and neither clipboard nor auto-save, a capture would go nowhere.
-    private var capturesAreDiscarded: Bool {
+    /// With "Do Nothing" and neither clipboard nor auto-save, a screenshot would go nowhere.
+    private var screenshotsAreDiscarded: Bool {
         let settings = model.settings
         return settings.afterCaptureAction == .nothing && !settings.copyToClipboard && !settings.autoSaveCaptures
-    }
-
-    private func refreshPermissionStatus() {
-        hasScreenRecordingAccess = CGPreflightScreenCaptureAccess()
     }
 }
 
@@ -74,26 +66,27 @@ fileprivate extension AfterCaptureAction {
     var preferencesSummary: LocalizedStringResource {
         switch self {
         case .showPreview: "Shows a floating preview with quick actions."
-        case .openEditor: "Opens the capture in the editor right away."
-        case .nothing: "Captures are only copied or saved, as set below."
+        case .openEditor: "Opens the screenshot in the editor right away."
+        case .nothing: "Screenshots are only copied or saved, as set below."
         }
     }
 }
 
 // MARK: - Save Folder Row
 
-/// Shows the folder used for saved captures, with buttons to change it or open it in Finder.
+/// "Save to" row: the folder used for saved screenshots, with buttons to reveal it in Finder or change it.
 private struct SaveFolderRow: View {
     @Bindable var model: SettingsModel
 
     var body: some View {
         let url = model.settings.saveDirectoryURL
         let exists = folderExists(at: url)
+        let path = (url.path as NSString).abbreviatingWithTildeInPath
 
         LabeledContent {
             HStack(spacing: 8) {
                 Button("Show in Finder") {
-                    NSWorkspace.shared.open(url)
+                    NSWorkspace.shared.activateFileViewerSelecting([url])
                 }
                 .disabled(!exists)
 
@@ -102,28 +95,15 @@ private struct SaveFolderRow: View {
                 }
             }
         } label: {
-            Label {
-                Text(FileManager.default.displayName(atPath: url.path))
-                if exists {
-                    Text(verbatim: (url.path as NSString).abbreviatingWithTildeInPath)
-                } else {
-                    Text("This folder can’t be found.")
-                }
-            } icon: {
-                Image(nsImage: folderIcon(for: url, exists: exists))
-                    .resizable()
-                    .frame(width: 20, height: 20)
+            Text("Save to")
+            if exists {
+                Text(verbatim: path)
+                    .help(path)
+            } else {
+                Text("“\(FileManager.default.displayName(atPath: url.path))” can’t be found. Choose another folder.")
+                    .help(path)
             }
-            .help((url.path as NSString).abbreviatingWithTildeInPath)
         }
-    }
-
-    /// The folder's Finder icon, or a generic folder icon when it's missing.
-    private func folderIcon(for url: URL, exists: Bool) -> NSImage {
-        if !exists, let genericFolder = NSImage(named: NSImage.folderName) {
-            return genericFolder
-        }
-        return NSWorkspace.shared.icon(forFile: url.path)
     }
 
     private func folderExists(at url: URL) -> Bool {
@@ -139,7 +119,7 @@ private struct SaveFolderRow: View {
         panel.allowsMultipleSelection = false
         panel.directoryURL = url
         panel.prompt = String(localized: "Choose")
-        panel.message = String(localized: "Choose where Clické saves your captures.")
+        panel.message = String(localized: "Choose where Clické saves your screenshots.")
 
         let completion: (NSApplication.ModalResponse) -> Void = { response in
             guard response == .OK, let chosen = panel.url else { return }
@@ -155,13 +135,9 @@ private struct SaveFolderRow: View {
 
 // MARK: - Screen Recording Permission Row
 
-/// Screen Recording status, with a shortcut to System Settings when access is missing.
+/// Screen Recording status, with a button to ask for access when it's missing.
 private struct ScreenRecordingPermissionRow: View {
     let hasAccess: Bool
-
-    private static let settingsURL = URL(
-        string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
-    )
 
     var body: some View {
         LabeledContent {
@@ -174,8 +150,10 @@ private struct ScreenRecordingPermissionRow: View {
                         .foregroundStyle(.secondary)
                 }
             } else {
-                Button("Open System Settings…") {
-                    requestAccess()
+                // The first click shows the system prompt; later clicks open the Screen & System Audio
+                // Recording pane of System Settings. The status is re-read when the window becomes key again.
+                Button("Open System Settings") {
+                    ScreenRecordingPermission.requestAccess()
                 }
             }
         } label: {
@@ -185,14 +163,6 @@ private struct ScreenRecordingPermissionRow: View {
             } else {
                 Text("Clické needs this permission to capture your screen. After allowing it, macOS may ask you to reopen Clické.")
             }
-        }
-    }
-
-    private func requestAccess() {
-        // Registers Clické in the Screen Recording list (and shows the system prompt the first time).
-        CGRequestScreenCaptureAccess()
-        if let url = Self.settingsURL {
-            NSWorkspace.shared.open(url)
         }
     }
 }

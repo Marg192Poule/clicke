@@ -8,7 +8,6 @@ import ServiceManagement
 struct GeneralSettingsView: View {
     @Bindable var model: SettingsModel
 
-    @State private var loginItemStatus = SMAppService.mainApp.status
     @State private var loginItemError: String?
 
     /// Slider value while dragging; saved to the settings when the drag ends.
@@ -24,7 +23,7 @@ struct GeneralSettingsView: View {
         Form {
             Section {
                 Toggle("Launch at login", isOn: launchAtLogin)
-                Toggle("Show icon in Dock", isOn: showDockIcon)
+                Toggle("Show icon in Dock", isOn: $model.settings.showDockIcon)
             } footer: {
                 footer
             }
@@ -36,7 +35,7 @@ struct GeneralSettingsView: View {
                     HStack(spacing: 8) {
                         Picker("Sound", selection: captureSound) {
                             ForEach(CaptureSound.allCases) { sound in
-                                Text(verbatim: sound.rawValue).tag(sound)
+                                Text(sound.displayName).tag(sound)
                             }
                         }
                         .labelsHidden()
@@ -48,7 +47,7 @@ struct GeneralSettingsView: View {
                             Label("Play Sound", systemImage: "play.fill")
                                 .labelStyle(.iconOnly)
                         }
-                        .help("Play Sound")
+                        .help("Play the selected sound")
                     }
                 }
                 .disabled(!model.settings.soundEffectsEnabled)
@@ -78,7 +77,6 @@ struct GeneralSettingsView: View {
         }
         .formStyle(.grouped)
         .scrollDisabled(true)
-        .onAppearAndAppActivation(perform: refreshLoginItemStatus)
         .onChange(of: model.settings.soundEffectsVolume) { _, newValue in
             if !isAdjustingVolume { volume = newValue }
         }
@@ -90,7 +88,7 @@ struct GeneralSettingsView: View {
             ),
             presenting: loginItemError
         ) { _ in
-            Button("Open Login Items…") {
+            Button("Open Login Items Settings") {
                 SMAppService.openSystemSettingsLoginItems()
             }
             Button("OK", role: .cancel) {}
@@ -103,7 +101,7 @@ struct GeneralSettingsView: View {
 
     @ViewBuilder
     private var footer: some View {
-        let needsApproval = loginItemStatus == .requiresApproval
+        let needsApproval = model.loginItemStatus == .requiresApproval
         let dockIconHidden = !model.settings.showDockIcon
         if needsApproval || dockIconHidden {
             VStack(alignment: .leading, spacing: 6) {
@@ -111,7 +109,7 @@ struct GeneralSettingsView: View {
                     HStack(alignment: .firstTextBaseline) {
                         Text("Clické needs your approval in System Settings to open at login.")
                         Spacer()
-                        Button("Open Login Items…") {
+                        Button("Open Login Items Settings") {
                             SMAppService.openSystemSettingsLoginItems()
                         }
                         .controlSize(.small)
@@ -128,18 +126,8 @@ struct GeneralSettingsView: View {
 
     private var launchAtLogin: Binding<Bool> {
         Binding(
-            get: { loginItemStatus == .enabled || loginItemStatus == .requiresApproval },
+            get: { model.loginItemStatus == .enabled || model.loginItemStatus == .requiresApproval },
             set: { setLaunchAtLogin($0) }
-        )
-    }
-
-    private var showDockIcon: Binding<Bool> {
-        Binding(
-            get: { model.settings.showDockIcon },
-            set: { newValue in
-                model.settings.showDockIcon = newValue
-                SettingsWindowController.shared.bringBackAfterActivationPolicyChange()
-            }
         )
     }
 
@@ -172,10 +160,6 @@ struct GeneralSettingsView: View {
         SoundManager.shared.playSound(model.settings.captureSound, volume: Float(volume))
     }
 
-    private func refreshLoginItemStatus() {
-        loginItemStatus = SMAppService.mainApp.status
-    }
-
     private func setLaunchAtLogin(_ enabled: Bool) {
         do {
             if enabled {
@@ -186,6 +170,6 @@ struct GeneralSettingsView: View {
         } catch {
             loginItemError = error.localizedDescription
         }
-        refreshLoginItemStatus()
+        model.refreshSystemStatus()
     }
 }

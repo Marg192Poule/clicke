@@ -1,14 +1,20 @@
 import AppKit
 import SwiftUI
 import Observation
+import ServiceManagement
 
 // MARK: - Settings Model
 
-/// Observable mirror of `AppSettings.current`, shared by every tab of the Preferences window.
+/// Observable mirror of `AppSettings.current` (plus a few system statuses), shared by every tab of
+/// the Preferences window.
 ///
 /// - Writing `settings` persists the new value right away through `AppSettings.current`
 ///   (which posts `.settingsDidChange`, so the rest of the app re-applies hotkeys, Dock icon, ...).
-/// - Changes made elsewhere in the app are picked up by observing `.settingsDidChange`.
+/// - While the window is open (between `startUpdating()` and `stopUpdating()`), changes made elsewhere
+///   in the app are picked up by observing `.settingsDidChange` and `.hotkeyAvailabilityDidChange`.
+///   While it's closed, nothing is observed or refreshed: `startUpdating()` catches up before it reappears.
+/// - System statuses (login item, Screen Recording) are only re-read when the window appears or
+///   becomes key (e.g. when the user comes back from System Settings). Nothing is polled.
 ///
 /// Both directions compare values before doing anything, so a write can never bounce back into another write.
 @Observable
@@ -25,27 +31,85 @@ final class SettingsModel {
 
     private var storage: AppSettings
 
-    /// Lives as long as the model (the model is owned by the long-lived `SettingsWindowController`).
-    @ObservationIgnored private var settingsObserver: NSObjectProtocol?
+    /// Shortcuts enabled in `settings` that aren't active (see `HotkeyAvailability`).
+    private(set) var unavailableHotkeys: Set<HotkeyConfiguration>
+
+    /// Whether Clické opens at login (`SMAppService.mainApp`).
+    private(set) var loginItemStatus: SMAppService.Status
+
+    /// Whether Clické has the Screen Recording permission.
+    private(set) var hasScreenRecordingAccess: Bool
+
+    /// Notification observers, registered only while the window is open.
+    @ObservationIgnored private var observers: [NSObjectProtocol] = []
 
     init() {
         storage = AppSettings.current
-        settingsObserver = NotificationCenter.default.addObserver(
-            forName: .settingsDidChange,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.reloadFromDefaults()
-            }
-        }
+        unavailableHotkeys = HotkeyAvailability.unavailable
+        loginItemStatus = SMAppService.mainApp.status
+        hasScreenRecordingAccess = ScreenRecordingPermission.isGranted
     }
 
+    // MARK: Window Lifecycle
+
+    /// Call before the window appears: catches up with what changed while it was closed, then
+    /// follows changes until `stopUpdating()`.
+    func startUpdating() {
+        reloadFromDefaults()
+        reloadHotkeyAvailability()
+        refreshSystemStatus()
+
+        guard observers.isEmpty else { return }
+        let center = NotificationCenter.default
+        observers = [
+            center.addObserver(forName: .settingsDidChange, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.reloadFromDefaults()
+                }
+            },
+            center.addObserver(forName: .hotkeyAvailabilityDidChange, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.reloadHotkeyAvailability()
+                }
+            },
+        ]
+    }
+
+    /// Call when the window closes: stops following changes.
+    func stopUpdating() {
+        for observer in observers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        observers = []
+    }
+
+    // MARK: Refreshing
+
     /// Re-reads the persisted settings. Does nothing if they match what's displayed (e.g. our own write).
-    func reloadFromDefaults() {
+    private func reloadFromDefaults() {
         let latest = AppSettings.current
         if latest != storage {
             storage = latest
+        }
+    }
+
+    private func reloadHotkeyAvailability() {
+        let latest = HotkeyAvailability.unavailable
+        if latest != unavailableHotkeys {
+            unavailableHotkeys = latest
+        }
+    }
+
+    /// Re-reads the statuses the user can change in System Settings. Called when the window appears or
+    /// becomes key, and after changing the login item.
+    func refreshSystemStatus() {
+        let status = SMAppService.mainApp.status
+        if status != loginItemStatus {
+            loginItemStatus = status
+        }
+        let access = ScreenRecordingPermission.isGranted
+        if access != hasScreenRecordingAccess {
+            hasScreenRecordingAccess = access
         }
     }
 }
@@ -77,19 +141,5 @@ struct SettingsTabContainer<Content: View>: View {
                 onSizeChange(size)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-    }
-}
-
-extension View {
-    /// Runs `action` when the view appears and every time the app becomes active
-    /// (e.g. when the user comes back from System Settings). No polling.
-    func onAppearAndAppActivation(perform action: @escaping () -> Void) -> some View {
-        self
-            .onAppear(perform: action)
-            .task {
-                for await _ in NotificationCenter.default.notifications(named: NSApplication.didBecomeActiveNotification) {
-                    action()
-                }
-            }
     }
 }
