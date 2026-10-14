@@ -225,21 +225,30 @@ nonisolated struct BackgroundEffects: Codable, Hashable, Sendable {
 
 /// A fixed canvas size, mostly for social networks. Exports are exactly `width × height` pixels.
 nonisolated struct SocialMediaPreset: Identifiable, Hashable, Sendable {
+    /// Stable identifier, used for persistence: it never changes, even if the platform is renamed.
+    let id: String
     let platform: String
     let name: String
     let width: Int
     let height: Int
     let ratio: String
 
-    /// Stable identifier, used for persistence.
-    var id: String { "\(platform).\(name)" }
+    init(id: String? = nil, platform: String, name: String, width: Int, height: Int, ratio: String) {
+        self.id = id ?? "\(platform).\(name)"
+        self.platform = platform
+        self.name = name
+        self.width = width
+        self.height = height
+        self.ratio = ratio
+    }
 
     var aspectRatio: CGFloat { CGFloat(width) / CGFloat(height) }
     var size: CGSize { CGSize(width: width, height: height) }
 
     static let presets: [SocialMediaPreset] = [
-        SocialMediaPreset(platform: "Twitter", name: "Post", width: 1200, height: 675, ratio: "16:9"),
-        SocialMediaPreset(platform: "Twitter", name: "Header", width: 1500, height: 500, ratio: "3:1"),
+        // Saved styles refer to the former "Twitter" IDs.
+        SocialMediaPreset(id: "Twitter.Post", platform: "X", name: "Post", width: 1200, height: 675, ratio: "16:9"),
+        SocialMediaPreset(id: "Twitter.Header", platform: "X", name: "Header", width: 1500, height: 500, ratio: "3:1"),
         SocialMediaPreset(platform: "Instagram", name: "Square", width: 1080, height: 1080, ratio: "1:1"),
         SocialMediaPreset(platform: "Instagram", name: "Portrait", width: 1080, height: 1350, ratio: "4:5"),
         SocialMediaPreset(platform: "Instagram", name: "Story", width: 1080, height: 1920, ratio: "9:16"),

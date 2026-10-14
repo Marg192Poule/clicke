@@ -76,7 +76,7 @@ private struct ExportFooterContent: View, Equatable {
                     }
                     .onHover { isHovering = $0 }
                     .pointerStyle(.grabIdle)
-                    .help("Drag the image to Finder, Mail, Messages or any other app.")
+                    .help("Drag the image to Finder, Mail, Messages or any other app")
                     .accessibilityLabel("Exported image")
                     .accessibilityHint("Drag to export the image to another app.")
 

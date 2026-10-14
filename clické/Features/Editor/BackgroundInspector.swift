@@ -90,7 +90,7 @@ private struct ColorOptions: View, Equatable {
             }
         }
         ColorPicker(
-            "Custom Color",
+            "Custom color",
             selection: Binding(get: { selection.color }, set: { onSelect(RGBAColor($0)) }),
             supportsOpacity: false
         )
@@ -134,17 +134,18 @@ private struct GradientOptions: View, Equatable {
                     ColorPicker("Color \(index + 1)", selection: color(at: index), supportsOpacity: false)
                         .labelsHidden()
                 }
+                let hasMiddleColor = gradient.colors.count == 3
                 Button {
                     update(Self.toggleMiddleColor)
                 } label: {
                     Label(
-                        gradient.colors.count == 3 ? "Remove Middle Color" : "Add Middle Color",
-                        systemImage: gradient.colors.count == 3 ? "minus.circle" : "plus.circle"
+                        hasMiddleColor ? LocalizedStringKey("Remove Middle Color") : LocalizedStringKey("Add Middle Color"),
+                        systemImage: hasMiddleColor ? "minus.circle" : "plus.circle"
                     )
                 }
                 .labelStyle(.iconOnly)
                 .buttonStyle(.borderless)
-                .help(gradient.colors.count == 3 ? "Remove Middle Color" : "Add Middle Color")
+                .help(hasMiddleColor ? Text("Remove the middle color") : Text("Add a middle color"))
             }
         }
 

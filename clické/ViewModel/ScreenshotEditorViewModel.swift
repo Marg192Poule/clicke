@@ -53,7 +53,9 @@ final class ScreenshotEditorViewModel {
     private(set) var isFitMode = true
     private(set) var viewportSize: CGSize = .zero
 
-    var isInspectorPresented = true
+    var isInspectorPresented: Bool {
+        didSet { EditorPreferences.isInspectorPresented = isInspectorPresented }
+    }
     var inspectorTab: InspectorTab {
         didSet { EditorPreferences.inspectorTab = inspectorTab }
     }
@@ -129,6 +131,7 @@ final class ScreenshotEditorViewModel {
         self.exportFormat = EditorPreferences.exportFormat
         self.jpegQuality = EditorPreferences.jpegQuality
         self.inspectorTab = EditorPreferences.inspectorTab
+        self.isInspectorPresented = EditorPreferences.isInspectorPresented
 
         if case .file(let url) = config.backgroundImage {
             wallpapers.addImportedImage(at: url)
@@ -814,7 +817,7 @@ final class ScreenshotEditorViewModel {
                 guard PasteboardWriter.writePNG(png) else {
                     throw ScreenshotRenderer.ExportError.pasteboardRefused
                 }
-                ToastManager.shared.show(message: String(localized: "Copied"), icon: "doc.on.clipboard.fill", success: true)
+                ToastManager.shared.show(message: String(localized: "Copied to Clipboard"), icon: "doc.on.clipboard.fill", success: true)
             } catch {
                 if exportedSnapshot == exported {
                     exportedSnapshot = previouslyExported
@@ -869,7 +872,8 @@ final class ScreenshotEditorViewModel {
                 }
                 try await ScreenshotRenderer.write(output, to: url, format: format, jpegQuality: quality)
                 markExported(exported)
-                ToastManager.shared.show(message: String(localized: "Saved"), icon: "checkmark.circle.fill", success: true)
+                let folder = FileManager.default.displayName(atPath: url.deletingLastPathComponent().path)
+                ToastManager.shared.show(message: String(localized: "Saved to “\(folder)”"), icon: "checkmark.circle.fill", success: true)
                 completion?(true)
             } catch {
                 presentError(error, message: String(localized: "The image couldn’t be saved."))

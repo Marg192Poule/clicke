@@ -59,26 +59,26 @@ final class EditorToolbarController: NSObject, NSToolbarDelegate {
         case .redo:
             item = button(identifier, String(localized: "Redo"), symbol: "arrow.uturn.forward", help: String(localized: "Redo (⇧⌘Z)"), action: #selector(redo))
         case .zoomOut:
-            item = button(identifier, String(localized: "Zoom Out"), symbol: "minus.magnifyingglass", help: String(localized: "Zoom Out (⌘−)"), action: #selector(zoomOut))
+            item = button(identifier, String(localized: "Zoom Out"), symbol: "minus.magnifyingglass", help: String(localized: "Zoom out (⌘−)"), action: #selector(zoomOut))
         case .zoomIn:
-            item = button(identifier, String(localized: "Zoom In"), symbol: "plus.magnifyingglass", help: String(localized: "Zoom In (⌘+)"), action: #selector(zoomIn))
+            item = button(identifier, String(localized: "Zoom In"), symbol: "plus.magnifyingglass", help: String(localized: "Zoom in (⌘+)"), action: #selector(zoomIn))
         case .zoomLevel:
             let menuItem = NSMenuToolbarItem(itemIdentifier: identifier)
             menuItem.menu = zoomMenu
             menuItem.showsIndicator = false
             menuItem.label = String(localized: "Zoom")
-            menuItem.toolTip = String(localized: "Zoom Level (⌘0 to fit, ⌘1 for actual size)")
+            menuItem.toolTip = String(localized: "Choose a zoom level")
             item = menuItem
         case .addImage:
-            item = button(identifier, String(localized: "Add Image"), symbol: "photo.badge.plus", help: String(localized: "Add Image (⌘O)"), action: #selector(addImage))
+            item = button(identifier, String(localized: "Add Image"), symbol: "photo.badge.plus", help: String(localized: "Add an image as a new layer"), action: #selector(addImage))
         case .redact:
-            item = button(identifier, String(localized: "Redact"), symbol: "eye.slash", help: String(localized: "Hide sensitive information in the selected screenshot"), action: #selector(redact))
+            item = button(identifier, String(localized: "Redact"), symbol: "eye.slash", help: String(localized: "Hide sensitive information in the selected image"), action: #selector(redact))
         case .save:
-            item = button(identifier, String(localized: "Save"), symbol: "square.and.arrow.down", help: String(localized: "Save (⌘S)"), action: #selector(save))
+            item = button(identifier, String(localized: "Save"), symbol: "square.and.arrow.down", help: String(localized: "Save the image (⌘S)"), action: #selector(save))
         case .copy:
-            item = button(identifier, String(localized: "Copy"), symbol: "doc.on.doc", help: String(localized: "Copy to Clipboard (⌘C)"), action: #selector(copyImage))
+            item = button(identifier, String(localized: "Copy"), symbol: "doc.on.doc", help: String(localized: "Copy the image to the clipboard (⌘C)"), action: #selector(copyImage))
         case .inspector:
-            item = button(identifier, String(localized: "Inspector"), symbol: "sidebar.right", help: String(localized: "Show or Hide Inspector (⌥⌘I)"), action: #selector(toggleInspector))
+            item = button(identifier, String(localized: "Inspector"), symbol: "sidebar.right", help: String(localized: "Show or hide the inspector (⌥⌘I)"), action: #selector(toggleInspector))
         default:
             return nil
         }

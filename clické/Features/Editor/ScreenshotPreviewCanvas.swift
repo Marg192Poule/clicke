@@ -118,10 +118,13 @@ private struct CanvasStage: View {
                 )
                 .allowsHitTesting(false) // clicks on the background reach the workspace
 
+                // Layers are numbered in the order they were added ("Layer 2"), like in the inspector.
+                let numbers = Dictionary(uniqueKeysWithValues: model.items.enumerated().map { ($1.id, $0 + 1) })
                 ForEach(model.items.sorted { $0.zIndex < $1.zIndex }) { item in
                     CanvasLayer(
                         model: model,
                         item: item,
+                        number: numbers[item.id] ?? 1,
                         unit: geometry.layerScale(for: item) * zoom,
                         center: geometry.center(of: item, scale: zoom),
                         zoom: zoom
@@ -154,10 +157,12 @@ private struct CanvasStage: View {
 
 // MARK: - Layer
 
-/// A layer on the live canvas: click to select, drag to move.
+/// A layer on the live canvas: click to select, drag to move, right-click for its actions.
 private struct CanvasLayer: View {
     let model: ScreenshotEditorViewModel
     let item: CanvasItem
+    /// "Layer 2": the layer's number, in the order layers were added.
+    let number: Int
     /// Screen points per layer point.
     let unit: CGFloat
     let center: CGPoint
@@ -173,15 +178,56 @@ private struct CanvasLayer: View {
         LayerView(item: item, image: item.image.bitmap(forDisplayPixelWidth: pixelWidth), unit: unit)
             .gesture(dragGesture)
             .pointerStyle(isDragging ? .grabActive : .grabIdle)
+            .contextMenu {
+                Button("Copy", action: copy)
+                Button("Redact…", action: redact)
+                Button("Bring to Front", action: bringToFront)
+                Button("Send to Back", action: sendToBack)
+                Divider()
+                Button("Delete Layer", role: .destructive, action: delete)
+                    .disabled(model.items.count < 2)
+            }
+            .accessibilityElement()
+            .accessibilityLabel(Text("Layer \(number)"))
+            .accessibilityAddTraits(model.selectedItemID == item.id ? [.isImage, .isSelected] : .isImage)
+            .accessibilityAction { model.selectedItemID = item.id }
+            .accessibilityAction(named: Text("Copy"), copy)
+            .accessibilityAction(named: Text("Redact"), redact)
+            .accessibilityAction(named: Text("Bring to Front"), bringToFront)
+            .accessibilityAction(named: Text("Send to Back"), sendToBack)
+            .accessibilityAction(named: Text("Delete Layer"), delete)
             .position(center)
             .onChange(of: isDragging) { _, dragging in
                 if !dragging { endDrag() }
             }
             .onDisappear { endDrag() }
-            .accessibilityElement()
-            .accessibilityLabel("Screenshot")
-            .accessibilityAddTraits(model.selectedItemID == item.id ? [.isImage, .isSelected] : .isImage)
-            .accessibilityAction { model.selectedItemID = item.id }
+    }
+
+    // MARK: Actions
+
+    /// Copies the image (the whole composition, like ⌘C).
+    private func copy() {
+        model.copyToClipboard()
+    }
+
+    private func redact() {
+        model.selectedItemID = item.id
+        model.redactSelectedLayer()
+    }
+
+    private func bringToFront() {
+        model.selectedItemID = item.id
+        model.bringSelectedToFront()
+    }
+
+    private func sendToBack() {
+        model.selectedItemID = item.id
+        model.sendSelectedToBack()
+    }
+
+    private func delete() {
+        model.selectedItemID = item.id
+        model.removeSelectedItem()
     }
 
     /// Starts on mouse down (so a click selects), moves the layer while dragging, one undo step.

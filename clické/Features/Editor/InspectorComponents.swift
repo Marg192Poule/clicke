@@ -116,6 +116,7 @@ struct SelectableTile<Content: View>: View {
     @ViewBuilder let content: () -> Content
 
     @State private var isHovering = false
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         Button(action: action) {
@@ -123,7 +124,7 @@ struct SelectableTile<Content: View>: View {
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
                 .overlay {
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(isHovering ? 0.35 : 0.12), lineWidth: 1)
+                        .strokeBorder(Color.primary.opacity(outlineOpacity), lineWidth: 1)
                 }
                 .padding(3)
                 .overlay {
@@ -139,6 +140,16 @@ struct SelectableTile<Content: View>: View {
         .help(title)
         .accessibilityLabel(title)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    /// Stronger with Increase Contrast, so light tiles stay distinct from the inspector.
+    private var outlineOpacity: Double {
+        switch (contrast == .increased, isHovering) {
+        case (true, true): 0.7
+        case (true, false): 0.45
+        case (false, true): 0.35
+        case (false, false): 0.12
+        }
     }
 }
 
@@ -170,12 +181,14 @@ struct ColorSwatchButton: View {
     let action: () -> Void
 
     @State private var isHovering = false
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
+        let isIncreased = contrast == .increased
         Button(action: action) {
             Circle()
                 .fill(color.color)
-                .overlay(Circle().strokeBorder(Color.primary.opacity(isHovering ? 0.4 : 0.15), lineWidth: 1))
+                .overlay(Circle().strokeBorder(Color.primary.opacity(isHovering ? (isIncreased ? 0.7 : 0.4) : (isIncreased ? 0.45 : 0.15)), lineWidth: 1))
                 .padding(3)
                 .overlay {
                     if isSelected {
@@ -187,6 +200,7 @@ struct ColorSwatchButton: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
+        .help(Text(verbatim: color.accessibilityName.prefix(1).localizedUppercase + color.accessibilityName.dropFirst()))
         .accessibilityLabel(Text("Color"))
         .accessibilityValue(Text(color.accessibilityName))
         .accessibilityAddTraits(isSelected ? .isSelected : [])

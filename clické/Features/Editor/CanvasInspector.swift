@@ -20,7 +20,7 @@ struct CanvasInspector: View {
                 Button("Center Layers") {
                     model.centerLayers()
                 }
-                .help("Move the screenshots to the middle of the canvas.")
+                .help("Move the images to the middle of the canvas")
             }
         }
 
@@ -97,7 +97,7 @@ private struct ExportSection: View, Equatable {
                     .equatable()
             }
 
-            LabeledContent("Image Size") {
+            LabeledContent("Image size") {
                 Text(pixelSizeDescription)
                     .monospacedDigit()
             }
@@ -131,8 +131,8 @@ private struct SizeTile: View {
                     Text("Auto")
                 }
             }
-            .font(.caption)
-            .foregroundStyle(isSelected ? .primary : .secondary)
+            .font(.caption.weight(isSelected ? .semibold : .regular))
+            .foregroundStyle(.primary)
 
             Group {
                 if let preset {
@@ -141,14 +141,14 @@ private struct SizeTile: View {
                     Text("Fit Image")
                 }
             }
-            .font(.caption2)
-            .foregroundStyle(.tertiary)
+            .font(.caption)
+            .foregroundStyle(.secondary)
         }
         .lineLimit(1)
     }
 
     private var description: Text {
-        guard let preset else { return Text("Auto: fits the screenshot, at full resolution") }
+        guard let preset else { return Text("Auto: fits the images at full resolution") }
         return Text(verbatim: "\(preset.platform) \(preset.name), \(preset.width) × \(preset.height) px")
     }
 

@@ -50,9 +50,9 @@ struct StyleInspector: View {
         } else {
             Section {
                 ContentUnavailableView(
-                    "No Layer Selected",
+                    "No Image Selected",
                     systemImage: "cursorarrow.click",
-                    description: Text("Click a screenshot on the canvas to edit its style.")
+                    description: Text("Click an image on the canvas to edit its style.")
                 )
             }
         }
@@ -113,6 +113,13 @@ private struct LayersSection: View, Equatable {
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
                 .contextMenu {
+                    Button("Copy") {
+                        model.copyToClipboard()
+                    }
+                    Button("Redact…") {
+                        model.selectedItemID = row.id
+                        model.redactSelectedLayer()
+                    }
                     Button("Bring to Front") {
                         model.selectedItemID = row.id
                         model.bringSelectedToFront()
@@ -127,6 +134,7 @@ private struct LayersSection: View, Equatable {
                         model.removeSelectedItem()
                     }
                 }
+                .accessibilityLabel(Text("Layer \(row.number)"))
             }
 
             HStack {
@@ -136,13 +144,13 @@ private struct LayersSection: View, Equatable {
                     } label: {
                         Label("Bring to Front", systemImage: "square.3.layers.3d.top.filled")
                     }
-                    .help("Bring to Front")
+                    .help("Bring the selected layer to the front")
                     Button {
                         model.sendSelectedToBack()
                     } label: {
                         Label("Send to Back", systemImage: "square.3.layers.3d.bottom.filled")
                     }
-                    .help("Send to Back")
+                    .help("Send the selected layer to the back")
                 }
                 .labelStyle(.iconOnly)
                 .fixedSize()
@@ -154,7 +162,7 @@ private struct LayersSection: View, Equatable {
                     model.applySelectedStyleToAllLayers()
                 }
                 .disabled(selection == nil)
-                .help("Give every layer the frame, corners and shadow of the selected one.")
+                .help("Give every layer the frame, corners and shadow of the selected one")
 
                 Button(role: .destructive) {
                     model.removeSelectedItem()
@@ -162,7 +170,7 @@ private struct LayersSection: View, Equatable {
                     Label("Delete Layer", systemImage: "trash")
                 }
                 .labelStyle(.iconOnly)
-                .help("Delete Layer (⌫)")
+                .help("Delete the selected layer (⌫)")
                 .disabled(!canDelete)
             }
         }
@@ -210,7 +218,7 @@ private struct FrameSection: View, Equatable {
                     supportsOpacity: false
                 )
             case .window:
-                Picker("Title Bar", selection: Binding(get: { windowAppearance }, set: { appearance in update { $0.style.windowAppearance = appearance } })) {
+                Picker("Title bar", selection: Binding(get: { windowAppearance }, set: { appearance in update { $0.style.windowAppearance = appearance } })) {
                     ForEach(WindowChromeAppearance.allCases) { appearance in
                         Text(appearance.displayName).tag(appearance)
                     }
@@ -362,7 +370,7 @@ private struct TransformSection: View, Equatable {
                     } label: {
                         Label("Rotate Left", systemImage: "rotate.left")
                     }
-                    .help("Rotate Left")
+                    .help("Rotate 90° left")
 
                     Text(SliderUnit.degrees.format(rotation))
                         .monospacedDigit()
@@ -374,17 +382,17 @@ private struct TransformSection: View, Equatable {
                     } label: {
                         Label("Rotate Right", systemImage: "rotate.right")
                     }
-                    .help("Rotate Right")
+                    .help("Rotate 90° right")
                 }
                 .labelStyle(.iconOnly)
                 .buttonStyle(.borderless)
             }
 
-            InspectorSlider("Vertical Tilt", value: rotationX, in: -60...60, unit: .degrees, defaultValue: 0) { value in
+            InspectorSlider("Vertical tilt", value: rotationX, in: -60...60, unit: .degrees, defaultValue: 0) { value in
                 update { $0.rotationX = value }
             }
             .equatable()
-            InspectorSlider("Horizontal Tilt", value: rotationY, in: -60...60, unit: .degrees, defaultValue: 0) { value in
+            InspectorSlider("Horizontal tilt", value: rotationY, in: -60...60, unit: .degrees, defaultValue: 0) { value in
                 update { $0.rotationY = value }
             }
             .equatable()

@@ -31,6 +31,7 @@ enum EditorPreferences {
     private static let exportFormatKey = "EditorExportFormat"
     private static let jpegQualityKey = "EditorJPEGQuality"
     private static let inspectorTabKey = "EditorInspectorTab"
+    private static let inspectorPresentedKey = "EditorInspectorPresented"
 
     private static var defaults: UserDefaults { .standard }
 
@@ -73,6 +74,12 @@ enum EditorPreferences {
     static var inspectorTab: InspectorTab {
         get { defaults.string(forKey: inspectorTabKey).flatMap(InspectorTab.init(rawValue:)) ?? .background }
         set { defaults.set(newValue.rawValue, forKey: inspectorTabKey) }
+    }
+
+    /// Whether the inspector is shown (it is on first launch).
+    static var isInspectorPresented: Bool {
+        get { defaults.object(forKey: inspectorPresentedKey) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: inspectorPresentedKey) }
     }
 }
 
