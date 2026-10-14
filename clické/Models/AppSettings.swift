@@ -24,7 +24,8 @@ extension Notification.Name {
 
 // MARK: - Hotkey Availability
 
-/// Shortcuts that are enabled in Settings but couldn't be registered (another app already uses them).
+/// Shortcuts that are enabled in Settings but aren't active: registration failed (another app
+/// already uses them, or macOS refused them) or they aren't valid global shortcuts.
 /// Written by the hotkey manager, read by the menus and the Shortcuts settings.
 enum HotkeyAvailability {
     /// Updated on the main thread; posts `.hotkeyAvailabilityDidChange` when it changes.
