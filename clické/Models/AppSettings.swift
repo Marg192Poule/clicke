@@ -16,12 +16,32 @@ extension Notification.Name {
 
     /// Posted when a shortcut recorder stops listening (recorded, cancelled or dismissed).
     static let hotkeyRecordingDidEnd = Notification.Name("ClickeHotkeyRecordingDidEnd")
+
+    /// Posted (on the main thread) when the set of shortcuts that couldn't be registered changes.
+    /// Read the new state from `HotkeyAvailability.unavailable`.
+    static let hotkeyAvailabilityDidChange = Notification.Name("ClickeHotkeyAvailabilityDidChange")
+}
+
+// MARK: - Hotkey Availability
+
+/// Shortcuts that are enabled in Settings but couldn't be registered (another app already uses them).
+/// Written by the hotkey manager, read by the menus and the Shortcuts settings.
+enum HotkeyAvailability {
+    /// Updated on the main thread; posts `.hotkeyAvailabilityDidChange` when it changes.
+    static var unavailable: Set<HotkeyConfiguration> = [] {
+        didSet {
+            guard unavailable != oldValue else { return }
+            NotificationCenter.default.post(name: .hotkeyAvailabilityDidChange, object: nil)
+        }
+    }
 }
 
 // MARK: - Capture Sound
 
 /// Available system sounds for capture feedback.
 enum CaptureSound: String, Codable, CaseIterable, Identifiable {
+    /// The macOS screenshot shutter sound.
+    case screenCapture = "Screen Capture"
     case hero = "Hero"
     case submarine = "Submarine"
     case blow = "Blow"
@@ -35,6 +55,24 @@ enum CaptureSound: String, Codable, CaseIterable, Identifiable {
 
     /// The system sound name used by macOS (`/System/Library/Sounds/<name>.aiff`).
     var systemSoundName: String { rawValue }
+
+    /// The sound file on disk.
+    var fileURL: URL {
+        switch self {
+        case .screenCapture:
+            URL(fileURLWithPath: "/System/Library/Components/CoreAudio.component/Contents/SharedSupport/SystemSounds/system/Screen Capture.aif")
+        default:
+            URL(fileURLWithPath: "/System/Library/Sounds/\(rawValue).aiff")
+        }
+    }
+
+    /// Name shown in Settings.
+    var displayName: String {
+        switch self {
+        case .screenCapture: String(localized: "Screen Capture")
+        default: rawValue
+        }
+    }
 }
 
 // MARK: - After Capture Action
@@ -109,7 +147,7 @@ struct AppSettings: Codable, Equatable {
         saveDirectoryPath: nil,
         soundEffectsEnabled: true,
         soundEffectsVolume: 0.5,
-        captureSound: .frog
+        captureSound: .screenCapture
     )
 
     /// The resolved folder for saved captures (falls back to the Desktop).

@@ -43,6 +43,16 @@ final class ScreenshotEditorWindow: NSObject, NSWindowDelegate {
         window?.performClose(nil)
     }
 
+    /// Whether the open editor holds edits that were never copied, saved or dragged out.
+    /// (Contract for the app delegate's quit confirmation; implemented by the editor.)
+    var hasUnexportedChanges: Bool { false }
+
+    /// Asks the user what to do with unexported edits (Save… / Don't Save / Cancel) if there are any.
+    /// Calls `completion(true)` when it's fine to close/quit, `false` if the user cancelled.
+    func confirmDiscardingChanges(_ completion: @escaping (Bool) -> Void) {
+        completion(true)
+    }
+
     // MARK: - Window
 
     private func createWindow(with images: [NSImage]) {

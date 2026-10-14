@@ -26,7 +26,7 @@ final class SoundManager {
 
     /// Loads a fresh instance of the system sound, so overlapping plays and volume changes don't interfere.
     private static func makeSound(for sound: CaptureSound) -> NSSound? {
-        let url = URL(fileURLWithPath: "/System/Library/Sounds/\(sound.systemSoundName).aiff")
+        let url = sound.fileURL
         if let nsSound = NSSound(contentsOf: url, byReference: true) {
             return nsSound
         }

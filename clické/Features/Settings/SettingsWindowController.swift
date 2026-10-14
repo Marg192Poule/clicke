@@ -68,6 +68,12 @@ final class SettingsWindowController: NSWindowController {
         fatalError("init(coder:) has not been implemented")
     }
 
+    /// Shows the Preferences window on a specific tab.
+    func show(tab: SettingsTab) {
+        tabViewController.select(tab)
+        show()
+    }
+
     /// Shows the Preferences window (creating its content on first use) and brings the app to the front.
     func show() {
         guard let window else { return }
@@ -171,6 +177,12 @@ final class SettingsTabViewController: NSTabViewController {
         // on the next layout pass). No Auto Layout constraints: the window frame is driven from here.
         controller.sizingOptions = [.preferredContentSize]
         return controller
+    }
+
+    /// Selects `tab` (the window resizes to fit it).
+    func select(_ tab: SettingsTab) {
+        guard let index = SettingsTab.allCases.firstIndex(of: tab), index != selectedTabViewItemIndex else { return }
+        selectedTabViewItemIndex = index
     }
 
     private var selectedTab: SettingsTab? {
