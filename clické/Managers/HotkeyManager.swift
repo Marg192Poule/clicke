@@ -13,22 +13,33 @@ nonisolated private let hotKeySignature: OSType = 0x436C_6B65
 /// - doesn't require the Accessibility permission, and Clické never sees any other keystroke;
 /// - consumes the key press, so the shortcut isn't also typed into the frontmost app.
 ///
-/// Shortcuts are re-registered when settings change and suspended while the Settings
-/// window records a new shortcut.
+/// Shortcuts are re-registered when settings change and suspended while the Settings window
+/// records a new shortcut. Enabled shortcuts that aren't active (taken by another app, or not a
+/// valid global shortcut) are published in `HotkeyAvailability.unavailable`. Failed registrations
+/// are retried whenever Clické becomes active: the other app may have quit in the meantime.
 final class HotkeyManager: NSObject {
 
     // MARK: - Properties
 
     private let onHotkey: (CaptureMode) -> Void
     private var eventHandler: EventHandlerRef?
-    private var hotKeyRefs: [EventHotKeyRef] = []
-    /// The shortcuts currently registered, to skip re-registering when unrelated settings change.
-    private var registeredConfigurations: [CaptureMode: HotkeyConfiguration] = [:]
-    private var isRecordingShortcut = false
+
+    /// A hot key registered successfully.
+    private struct Registration {
+        let configuration: HotkeyConfiguration
+        let ref: EventHotKeyRef
+    }
+
+    /// The active hot keys only (failed registrations are never stored here).
+    private var registrations: [CaptureMode: Registration] = [:]
+    /// The enabled shortcuts from the settings, as last applied.
+    private var desiredConfigurations: [CaptureMode: HotkeyConfiguration] = [:]
+    /// Number of shortcut recorders listening: hot keys stay unregistered while it's above zero.
+    private var suspendCount = 0
     private var isStarted = false
 
-    /// Shortcuts the user was already told are taken, so the warning isn't repeated on every change.
-    private var reportedConflicts: Set<HotkeyConfiguration> = []
+    /// Shortcuts the user was already warned about this session.
+    private var reportedFailures: Set<HotkeyConfiguration> = []
 
     // MARK: - Initialization
 
@@ -52,8 +63,15 @@ final class HotkeyManager: NSObject {
         center.addObserver(self, selector: #selector(settingsDidChange), name: .settingsDidChange, object: nil)
         center.addObserver(self, selector: #selector(recordingDidBegin), name: .hotkeyRecordingDidBegin, object: nil)
         center.addObserver(self, selector: #selector(recordingDidEnd), name: .hotkeyRecordingDidEnd, object: nil)
+        center.addObserver(
+            self,
+            selector: #selector(applicationDidBecomeActive),
+            name: NSApplication.didBecomeActiveNotification,
+            object: nil
+        )
 
-        registerHotkeys()
+        desiredConfigurations = currentConfigurations()
+        applyRegistrations()
     }
 
     /// Unregisters everything.
@@ -62,7 +80,7 @@ final class HotkeyManager: NSObject {
         isStarted = false
 
         NotificationCenter.default.removeObserver(self)
-        unregisterHotkeys()
+        unregisterAll()
 
         if let eventHandler {
             RemoveEventHandler(eventHandler)
@@ -73,18 +91,31 @@ final class HotkeyManager: NSObject {
     // MARK: - Notifications
 
     @objc private func settingsDidChange() {
-        guard !isRecordingShortcut, currentConfigurations() != registeredConfigurations else { return }
-        registerHotkeys()
+        let configurations = currentConfigurations()
+        guard configurations != desiredConfigurations else { return }
+        desiredConfigurations = configurations
+        applyRegistrations()
     }
 
     @objc private func recordingDidBegin() {
-        isRecordingShortcut = true
-        unregisterHotkeys()
+        suspendCount += 1
+        if suspendCount == 1 {
+            unregisterAll()
+        }
     }
 
     @objc private func recordingDidEnd() {
-        isRecordingShortcut = false
-        registerHotkeys()
+        guard suspendCount > 0 else { return }
+        suspendCount -= 1
+        guard suspendCount == 0 else { return }
+        desiredConfigurations = currentConfigurations()
+        applyRegistrations()
+    }
+
+    /// A shortcut taken by another app may have been released since: try the failed ones again.
+    @objc private func applicationDidBecomeActive() {
+        guard !HotkeyAvailability.unavailable.isEmpty else { return }
+        applyRegistrations()
     }
 
     // MARK: - Registration
@@ -98,19 +129,28 @@ final class HotkeyManager: NSObject {
         return configurations
     }
 
-    private func registerHotkeys() {
-        unregisterHotkeys()
-        guard isStarted, !isRecordingShortcut else { return }
+    /// Makes the registered hot keys match `desiredConfigurations`: unregisters the ones that were
+    /// changed or disabled, registers the missing ones (retrying earlier failures), then publishes
+    /// the enabled shortcuts that still aren't active.
+    private func applyRegistrations() {
+        guard isStarted, suspendCount == 0 else { return }
 
-        let configurations = currentConfigurations()
-        var conflicts: [HotkeyConfiguration] = []
+        // Release changed shortcuts first, so two modes can swap their shortcuts.
+        for (mode, registration) in registrations where desiredConfigurations[mode] != registration.configuration {
+            UnregisterEventHotKey(registration.ref)
+            registrations[mode] = nil
+        }
+
+        var unavailable: Set<HotkeyConfiguration> = []
+        var failures: [RegistrationFailure] = []
 
         for mode in CaptureMode.allCases {
-            guard let configuration = configurations[mode] else { continue }   // disabled
+            guard let configuration = desiredConfigurations[mode], registrations[mode] == nil else { continue }
 
             // A shortcut without ⌘ ⌥ ⌃ (other than an F-key) would swallow normal typing.
             guard configuration.isValidGlobalShortcut else {
                 logger.warning("Not registering \(configuration.displayString, privacy: .public): not a valid global shortcut")
+                unavailable.insert(configuration)
                 continue
             }
 
@@ -125,37 +165,58 @@ final class HotkeyManager: NSObject {
             )
 
             if status == noErr, let hotKeyRef {
-                hotKeyRefs.append(hotKeyRef)
+                registrations[mode] = Registration(configuration: configuration, ref: hotKeyRef)
                 logger.debug("Registered \(configuration.displayString, privacy: .public)")
             } else {
-                // eventHotKeyExistsErr (-9878): the combination is already taken (by another app or another mode).
+                // eventHotKeyExistsErr (-9878): another app already uses the combination.
                 logger.error("Couldn't register \(configuration.displayString, privacy: .public) (OSStatus \(status, privacy: .public))")
-                conflicts.append(configuration)
+                unavailable.insert(configuration)
+                failures.append(RegistrationFailure(configuration: configuration, status: status))
             }
         }
 
-        registeredConfigurations = configurations
-        reportConflicts(conflicts)
+        HotkeyAvailability.unavailable = unavailable
+        reportFailures(failures)
     }
 
-    /// Tells the user (once per shortcut) that a shortcut doesn't work because something else uses it.
-    private func reportConflicts(_ conflicts: [HotkeyConfiguration]) {
-        let newConflict = conflicts.first { !reportedConflicts.contains($0) }
-        reportedConflicts = Set(conflicts)
-        guard let newConflict else { return }
-        ToastManager.shared.show(
-            message: String(localized: "The shortcut \(newConflict.displayString) is already in use"),
-            icon: "exclamationmark.triangle.fill",
-            success: false
-        )
+    private struct RegistrationFailure {
+        let configuration: HotkeyConfiguration
+        let status: OSStatus
     }
 
-    private func unregisterHotkeys() {
-        for hotKeyRef in hotKeyRefs {
-            UnregisterEventHotKey(hotKeyRef)
+    /// Tells the user, once per shortcut and per session, that a shortcut doesn't work.
+    private func reportFailures(_ failures: [RegistrationFailure]) {
+        let newFailures = failures.filter { !reportedFailures.contains($0.configuration) }
+        guard let first = newFailures.first else { return }
+        reportedFailures.formUnion(newFailures.map(\.configuration))
+
+        let message: String
+        if newFailures.count > 1 {
+            let list = ListFormatter.localizedString(byJoining: newFailures.map(\.configuration.displayString))
+            message = String(
+                localized: "Shortcuts \(list) Aren’t Available",
+                comment: "Toast: several capture shortcuts couldn’t be registered (list of shortcuts)"
+            )
+        } else if first.status == OSStatus(eventHotKeyExistsErr) {
+            message = String(
+                localized: "Shortcut \(first.configuration.displayString) Is Used by Another App",
+                comment: "Toast: a capture shortcut is already taken by another app"
+            )
+        } else {
+            message = String(
+                localized: "Shortcut \(first.configuration.displayString) Isn’t Available",
+                comment: "Toast: macOS refused to register a capture shortcut"
+            )
         }
-        hotKeyRefs.removeAll()
-        registeredConfigurations = [:]
+        ToastManager.shared.show(message: message, icon: "exclamationmark.triangle.fill", success: false)
+    }
+
+    /// Unregisters every hot key. The shortcuts stay desired: `applyRegistrations()` brings them back.
+    private func unregisterAll() {
+        for registration in registrations.values {
+            UnregisterEventHotKey(registration.ref)
+        }
+        registrations.removeAll()
     }
 
     // MARK: - Event Handling
