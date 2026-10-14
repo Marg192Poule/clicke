@@ -123,7 +123,7 @@ final class MenuController: NSObject, NSMenuDelegate, NSMenuItemValidation {
 
     /// Standard responder-chain actions: the editor implements them, and text fields get ⌘C/⌘V/⌘Z.
     private func makeEditMenu() -> NSMenu {
-        let menu = NSMenu(title: String(localized: "Edit"))
+        let menu = NSMenu(title: String(localized: "menu.edit", defaultValue: "Edit", comment: "Title of the Edit menu in the menu bar"))
         menu.addItem(makeItem(String(localized: "Undo"), action: Selector(("undo:")), key: "z", target: .firstResponder))
         menu.addItem(makeItem(String(localized: "Redo"), action: Selector(("redo:")), key: "z", modifiers: [.command, .shift], target: .firstResponder))
         menu.addItem(.separator())
@@ -159,7 +159,7 @@ final class MenuController: NSObject, NSMenuDelegate, NSMenuItemValidation {
     private func makeWindowMenu() -> NSMenu {
         let menu = NSMenu(title: String(localized: "Window"))
         menu.addItem(makeItem(String(localized: "Minimize"), action: #selector(NSWindow.performMiniaturize(_:)), key: "m", target: .firstResponder))
-        menu.addItem(makeItem(String(localized: "Zoom"), action: #selector(NSWindow.performZoom(_:)), target: .firstResponder))
+        menu.addItem(makeItem(String(localized: "menu.window.zoom", defaultValue: "Zoom", comment: "Window menu item that zooms the window"), action: #selector(NSWindow.performZoom(_:)), target: .firstResponder))
         menu.addItem(.separator())
         menu.addItem(makeItem(String(localized: "Bring All to Front"), action: #selector(NSApplication.arrangeInFront(_:)), target: .firstResponder))
         return menu
