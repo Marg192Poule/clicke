@@ -34,10 +34,9 @@ enum CaptureMode {
 
 // MARK: - App Delegate
 
-class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private let toastManager = ToastManager()
-    private var settingsWindow: NSWindow?
     private let hotkeyManager = HotkeyManager()
     private var permissionsCheckTimer: Timer?
     private var lastAccessibilityStatus = false
@@ -323,7 +322,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
     
     private func playCaptureSound() {
-        let settings = Settings.current
+        let settings = AppSettings.current
         guard settings.soundEffectsEnabled else { return }
         
         SoundManager.shared.playSound(
@@ -335,31 +334,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     // MARK: - Settings Window
     
     @objc private func openSettings() {
-        if settingsWindow == nil {
-            let settingsView = AppSettingsView()
-            settingsWindow = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 200, height: 200),
-                styleMask: [.fullSizeContentView, .titled, .closable, .resizable],
-                backing: .buffered,
-                defer: false
-            )
-            settingsWindow?.isReleasedWhenClosed = false
-            settingsWindow?.delegate = self
-            settingsWindow?.title = "Preferences"
-            settingsWindow?.contentView = NSHostingView(rootView: settingsView)
-            settingsWindow?.center()
-            settingsWindow?.titlebarAppearsTransparent = true
-            settingsWindow?.titleVisibility = .hidden
-        }
-        settingsWindow?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-    }
-
-    func windowWillClose(_ notification: Notification) {
-        guard let window = notification.object as? NSWindow else { return }
-        if window === settingsWindow {
-            settingsWindow = nil
-        }
+        SettingsWindowController.shared.show()
     }
     
     // MARK: - Notification Handlers
@@ -369,7 +344,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
     
     private func updateDockIconVisibility() {
-        let settings = Settings.current
+        let settings = AppSettings.current
         if settings.showDockIcon {
             NSApp.setActivationPolicy(.regular)
         } else {

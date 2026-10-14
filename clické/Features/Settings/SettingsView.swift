@@ -4,7 +4,7 @@ import ApplicationServices
 
 /// Main view with sidebar (used in AppSettingsView)
 struct SettingsContentView: View {
-    @State private var settings: Settings = Settings.current
+    @State private var settings: AppSettings = AppSettings.current
     @State private var isSettingHotKey = false
     @State private var currentModifiers: NSEvent.ModifierFlags = []
     @State private var showAccessibilityAlert = false
@@ -18,14 +18,14 @@ struct SettingsContentView: View {
             
             // Hotkey Section
             HotKeySectionView(
-                configuration: $settings.hotkey,
+                configuration: Binding(get: { settings.areaHotkey ?? AppSettings.defaultAreaHotkey }, set: { settings.areaHotkey = $0 }),
                 isSettingHotKey: $isSettingHotKey,
                 currentModifiers: $currentModifiers
             )
             
             // Tab Capture Hotkey Section
             TabCaptureHotKeySectionView(
-                configuration: $settings.tabCaptureHotkey,
+                configuration: Binding(get: { settings.windowHotkey ?? AppSettings.defaultWindowHotkey }, set: { settings.windowHotkey = $0 }),
                 isSettingHotKey: $isSettingHotKey,
                 currentModifiers: $currentModifiers
             )
@@ -63,7 +63,7 @@ struct SettingsContentView: View {
             )
         )
         .onChange(of: settings) { oldValue, newValue in
-            Settings.current = newValue
+            AppSettings.current = newValue
             // Notify AppDelegate to update hotkey
             NotificationCenter.default.post(name: NSNotification.Name("HotkeyConfigurationChanged"), object: nil)
             // Update dock icon

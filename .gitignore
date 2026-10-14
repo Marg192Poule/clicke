@@ -98,3 +98,7 @@ Temporary Items
 
 # Cursor
 .cursor/
+
+# Release packaging artifacts (never commit built binaries)
+dmg_temp/
+*.dmg

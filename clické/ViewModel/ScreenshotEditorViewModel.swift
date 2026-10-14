@@ -101,7 +101,7 @@ final class WallpaperCache {
             for path in possiblePaths {
                 if let contents = try? FileManager.default.contentsOfDirectory(atPath: path) {
                     let imageFiles = contents.filter { 
-                        $0.hasSuffix(".jpg") || $0.hasSuffix(".jpeg") || $0.hasSuffix(".png") 
+                        ["jpg", "jpeg", "png", "heic"].contains(($0 as NSString).pathExtension.lowercased())
                     }
                     if !imageFiles.isEmpty {
                         let baseURL = URL(fileURLWithPath: path)
@@ -181,8 +181,8 @@ class ScreenshotEditorViewModel: ObservableObject {
         var defaultConfig = ScreenshotStyleConfig.default
 
         // Load default image from bundle only
-        if let url = Bundle.main.url(forResource: "Black and White Gradient Macbook Wallpaper_Texture", withExtension: "png", subdirectory: "public") ??
-           Bundle.main.url(forResource: "Black and White Gradient Macbook Wallpaper_Texture", withExtension: "png"),
+        if let url = Bundle.main.url(forResource: "Black and White Gradient Macbook Wallpaper_Texture", withExtension: "heic", subdirectory: "public") ??
+           Bundle.main.url(forResource: "Black and White Gradient Macbook Wallpaper_Texture", withExtension: "heic"),
            let image = NSImage(contentsOf: url) {
             defaultConfig.backgroundImageURL = url
             defaultConfig.backgroundType = .image

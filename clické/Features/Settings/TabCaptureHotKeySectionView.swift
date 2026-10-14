@@ -14,9 +14,9 @@ struct TabCaptureHotKeySectionView: View {
             description: "Configure the shortcut to capture the active window",
             configuration: $configuration,
             onConfigurationChanged: { newConfig in
-                var settings = Settings.current
-                settings.tabCaptureHotkey = newConfig
-                Settings.current = settings
+                var settings = AppSettings.current
+                settings.windowHotkey = newConfig
+                AppSettings.current = settings
                 NotificationCenter.default.post(name: NSNotification.Name("HotkeyConfigurationChanged"), object: nil)
             }
         )

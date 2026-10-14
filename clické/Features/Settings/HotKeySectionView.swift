@@ -119,7 +119,7 @@ struct HotKeySectionView: View {
             description: "Click the area above then type the desired key combination",
             configuration: $configuration,
             onConfigurationChanged: { newConfig in
-                Settings.current.hotkey = newConfig
+                AppSettings.current.areaHotkey = newConfig
                 NotificationCenter.default.post(name: NSNotification.Name("HotkeyConfigurationChanged"), object: nil)
             }
         )

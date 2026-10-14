@@ -31,7 +31,7 @@ class HotkeyManager {
         screenshotHandler = HotkeyHandler(
             globalMonitor: nil,
             localMonitor: nil,
-            configuration: Settings.current.hotkey,
+            configuration: AppSettings.current.areaHotkey ?? AppSettings.defaultAreaHotkey,
             onPressed: handler
         )
     }
@@ -44,7 +44,7 @@ class HotkeyManager {
         tabCaptureHandler = HotkeyHandler(
             globalMonitor: nil,
             localMonitor: nil,
-            configuration: Settings.current.tabCaptureHotkey,
+            configuration: AppSettings.current.windowHotkey ?? AppSettings.defaultWindowHotkey,
             onPressed: handler
         )
     }
@@ -57,7 +57,7 @@ class HotkeyManager {
         
         // Register screenshot hotkey
         if var handler = screenshotHandler {
-            handler.configuration = Settings.current.hotkey
+            handler.configuration = AppSettings.current.areaHotkey ?? AppSettings.defaultAreaHotkey
             
             // Global monitor to capture events even when app is not active
             handler.globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
@@ -80,7 +80,7 @@ class HotkeyManager {
         
         // Register tab capture hotkey
         if var handler = tabCaptureHandler {
-            handler.configuration = Settings.current.tabCaptureHotkey
+            handler.configuration = AppSettings.current.windowHotkey ?? AppSettings.defaultWindowHotkey
             
             // Global monitor to capture events even when app is not active
             handler.globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
@@ -134,5 +134,13 @@ class HotkeyManager {
     static func checkAccessibilityPermissions() -> Bool {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: false]
         return AXIsProcessTrustedWithOptions(options as CFDictionary)
+    }
+}
+
+// Temporary: NSEvent-based matching (to be replaced by Carbon hotkeys).
+fileprivate extension HotkeyConfiguration {
+    func matches(event: NSEvent) -> Bool {
+        let eventModifiers = event.modifierFlags.intersection(Self.supportedModifiers)
+        return event.keyCode == keyCode && eventModifiers == modifiers
     }
 }
