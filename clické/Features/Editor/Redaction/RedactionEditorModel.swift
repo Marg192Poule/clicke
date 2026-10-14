@@ -176,10 +176,21 @@ final class RedactionEditorModel {
         self.pixelSize = Self.estimatedPixelSize(of: image)
     }
 
+    /// The image's bitmap at full resolution, through the editor's bounded import (vector images
+    /// are rasterized at a bounded size).
+    private static func fullResolutionImage(of image: NSImage) -> CGImage? {
+        switch try? ImageImport.prepare(image) {
+        case .ready(let imported)?, .needsDecoding(let imported, _)?:
+            return imported.cgImage
+        case nil:
+            return nil
+        }
+    }
+
     /// Decodes the image and builds the working copy that is displayed and previewed.
     func prepare() async {
         guard cgImage == nil, !loadFailed, !isClosed else { return }
-        guard let decoded = image.bestCGImage else {
+        guard let decoded = Self.fullResolutionImage(of: image) else {
             Self.logger.error("Couldn't get pixels for the image to redact")
             loadFailed = true
             return
