@@ -1,158 +1,127 @@
 import AppKit
 import SwiftUI
 
-/// Manager for displaying toast notifications.
-/// Uses a singleton pattern to ensure only one toast is shown at a time.
-class ToastManager {
-    
+/// Shows short HUD messages ("Copied", "Saved", errors…) at the top of the screen under the pointer.
+///
+/// There's a single shared HUD: a new message replaces the current one instead of stacking.
+/// The HUD never takes focus nor intercepts clicks.
+final class ToastManager {
+
     // MARK: - Singleton
-    
+
     static let shared = ToastManager()
-    
+
+    private init() {}
+
     // MARK: - Properties
-    
-    private var popupWindow: NSWindow?
-    private var dismissWorkItem: DispatchWorkItem?
-    
+
+    private static let displayDuration: Duration = .seconds(1.6)
+    private static let topMargin: CGFloat = 12
+
+    private var panel: NSPanel?
+    private var hostingView: NSHostingView<ToastView>?
+    private var dismissTask: Task<Void, Never>?
+    /// Incremented for each message, so a fade-out that finishes late doesn't hide a newer one.
+    private var generation = 0
+
     // MARK: - Show Toast
-    
-    /// Shows a simple toast notification.
+
+    /// Shows a toast notification.
     /// - Parameters:
-    ///   - message: The message to display.
+    ///   - message: The message to display (already localized).
     ///   - icon: The SF Symbol name for the icon.
     ///   - success: Whether this is a success or error toast.
     func show(message: String, icon: String, success: Bool) {
-        popupWindow?.close()
-        dismissWorkItem?.cancel()
+        generation += 1
+        let toast = ToastView(message: message, icon: icon, success: success)
 
-        let screen = NSScreen.main ?? NSScreen.screens[0]
-        let window = NSPanel(
-            contentRect: screen.frame,
-            styleMask: [.fullSizeContentView, .borderless, .utilityWindow, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-
-        window.level = .screenSaver
-        window.backgroundColor = .clear
-        window.isOpaque = false
-        window.hasShadow = false
-        window.ignoresMouseEvents = true
-        window.collectionBehavior = [.fullScreenAuxiliary, .canJoinAllSpaces, .stationary, .ignoresCycle]
-
-        let toastView = ToastView(message: message, icon: icon, success: success)
-        let centeredToast = VStack {
-            toastView
-                .padding(.top, 50)
-            Spacer()
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        
-        window.contentView = NSHostingView(rootView: centeredToast)
-
-        // Fade in animation
-        window.alphaValue = 0
-        window.orderFront(nil)
-        popupWindow = window
-
-        NSAnimationContext.runAnimationGroup { context in 
-            context.duration = 0.2
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            window.animator().alphaValue = 1
+        let panel = panel ?? makePanel()
+        let hostingView: NSHostingView<ToastView>
+        if let existing = self.hostingView {
+            existing.rootView = toast
+            hostingView = existing
+        } else {
+            hostingView = NSHostingView(rootView: toast)
+            panel.contentView = hostingView
+            self.hostingView = hostingView
         }
 
-        let workItem = DispatchWorkItem { [weak self] in 
-            NSAnimationContext.runAnimationGroup({ context in 
-                context.duration = 0.3
-                context.timingFunction = CAMediaTimingFunction(name: .easeIn)
-                window.animator().alphaValue = 0
-            }) {
-                window.close()
-                self?.popupWindow = nil
-            }
+        let size = hostingView.fittingSize
+        if let screen = ScreenLocator.screenUnderPointer() {
+            let visibleFrame = screen.visibleFrame
+            panel.setFrame(
+                NSRect(
+                    x: (visibleFrame.midX - size.width / 2).rounded(),
+                    y: visibleFrame.maxY - size.height - Self.topMargin,
+                    width: size.width,
+                    height: size.height
+                ),
+                display: true
+            )
         }
-        dismissWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.8, execute: workItem)
-    }
 
-    /// Shows an interactive toast with an Edit button.
-    /// - Parameters:
-    ///   - message: The message to display.
-    ///   - icon: The SF Symbol name for the icon.
-    ///   - screenshotImage: The captured image to edit.
-    func showWithEditOption(message: String, icon: String, screenshotImage: NSImage) {
-        popupWindow?.close()
-        dismissWorkItem?.cancel()
-
-        let screen = NSScreen.main ?? NSScreen.screens[0]
-
-        // Compact toast dimensions - only covers the toast area, not the full screen
-        let toastWidth: CGFloat = 280
-        let toastHeight: CGFloat = 52
-        let toastX = screen.frame.midX - toastWidth / 2
-        let toastY = screen.frame.maxY - toastHeight - 50
-        let toastRect = NSRect(x: toastX, y: toastY, width: toastWidth, height: toastHeight)
-
-        let window = NSPanel(
-            contentRect: toastRect,
-            styleMask: [.fullSizeContentView, .borderless, .utilityWindow, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-
-        window.level = .screenSaver
-        window.backgroundColor = .clear
-        window.isOpaque = false
-        window.hasShadow = false
-        window.ignoresMouseEvents = false
-        window.collectionBehavior = [.fullScreenAuxiliary, .canJoinAllSpaces, .stationary, .ignoresCycle]
-
-        let capturedImage = screenshotImage
-
-        let toastView = InteractiveToastView(
-            message: message,
-            icon: icon,
-            onEdit: { [weak self] in
-                self?.dismiss()
-                ScreenshotEditorWindow.shared.show(with: capturedImage)
-            }
-        )
-
-        window.contentView = NSHostingView(rootView: toastView)
-
-        // Fade in animation
-        window.alphaValue = 0
-        window.orderFront(nil)
-        popupWindow = window
-
+        if !panel.isVisible {
+            panel.alphaValue = 0
+            panel.orderFrontRegardless()
+        }
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.2
+            context.duration = 0.15
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            window.animator().alphaValue = 1
+            panel.animator().alphaValue = 1
         }
 
-        // Auto-dismiss after 3 seconds
-        let workItem = DispatchWorkItem { [weak self] in
-            self?.dismiss()
+        NSAccessibility.post(
+            element: NSApp as Any,
+            notification: .announcementRequested,
+            userInfo: [
+                .announcement: message,
+                .priority: NSAccessibilityPriorityLevel.medium.rawValue
+            ]
+        )
+
+        let token = generation
+        dismissTask?.cancel()
+        dismissTask = Task { [weak self] in
+            try? await Task.sleep(for: Self.displayDuration)
+            guard !Task.isCancelled else { return }
+            self?.fadeOut(token: token)
         }
-        dismissWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0, execute: workItem)
     }
 
-    /// Dismisses the currently displayed toast.
-    func dismiss() {
-        dismissWorkItem?.cancel()
-        dismissWorkItem = nil
-        
-        guard let window = popupWindow else { return }
-        
-        NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.3
+    // MARK: - Private
+
+    private func fadeOut(token: Int) {
+        guard let panel, token == generation else { return }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.25
             context.timingFunction = CAMediaTimingFunction(name: .easeIn)
-            window.animator().alphaValue = 0
-        }) { [weak self] in
-            window.close()
-            self?.popupWindow = nil
+            panel.animator().alphaValue = 0
+        } completionHandler: { [weak self] in
+            // A newer toast may have appeared during the fade: keep it on screen.
+            guard let self, token == generation else { return }
+            panel.orderOut(nil)
         }
+    }
+
+    private func makePanel() -> NSPanel {
+        let panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 200, height: 44),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: true
+        )
+        panel.level = .statusBar
+        panel.isFloatingPanel = true
+        panel.hidesOnDeactivate = false
+        panel.isReleasedWhenClosed = false
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = false
+        panel.ignoresMouseEvents = true
+        panel.animationBehavior = .none
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        panel.sharingType = .none
+        self.panel = panel
+        return panel
     }
 }
