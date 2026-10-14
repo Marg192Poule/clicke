@@ -1,148 +1,200 @@
 import AppKit
 import SwiftUI
 
-/// Manages the screenshot editor window lifecycle and presentation.
-class ScreenshotEditorWindow: NSObject, NSWindowDelegate {
-    private var editorWindow: NSWindow?
-    private var isClosing = false
-    
+/// Manages the screenshot editor window.
+///
+/// There is a single editor window: showing an image while it's open adds the image as a new layer.
+final class ScreenshotEditorWindow: NSObject, NSWindowDelegate {
     static let shared = ScreenshotEditorWindow()
-    
-    // Notification names for toolbar actions
-    static let copyNotification = Notification.Name("ScreenshotEditorToolbarCopy")
-    static let saveNotification = Notification.Name("ScreenshotEditorToolbarSave")
-    static let resetNotification = Notification.Name("ScreenshotEditorToolbarReset")
-    static let zoomFitNotification = Notification.Name("ScreenshotEditorToolbarZoomFit")
-    static let zoomActualNotification = Notification.Name("ScreenshotEditorToolbarZoomActual")
-    static let miniaturizeNotification = Notification.Name("ScreenshotEditorMiniaturize")
-    static let zoomWindowNotification = Notification.Name("ScreenshotEditorZoomWindow")
-    
+
+    private var window: EditorWindow?
+    private var model: ScreenshotEditorViewModel?
+    private var toolbarController: EditorToolbarController?
+
+    private static let frameAutosaveName = "ClickeEditorWindow"
+
     private override init() {
         super.init()
-        setupNotificationObservers()
     }
-    
-    private func setupNotificationObservers() {
-        NotificationCenter.default.addObserver(self, selector: #selector(handleMiniaturize), name: Self.miniaturizeNotification, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(handleZoomWindow), name: Self.zoomWindowNotification, object: nil)
-    }
-    
-    @objc private func handleMiniaturize() {
-        editorWindow?.miniaturize(nil)
-    }
-    
-    @objc private func handleZoomWindow() {
-        editorWindow?.zoom(nil)
-    }
-    
-    /// Shows the editor window with the specified image.
-    /// - Parameter image: The screenshot image to edit.
+
+    /// Whether the editor window is currently open.
+    var isOpen: Bool { window != nil }
+
+    /// Opens the editor with `image`, or adds it as a new layer if the editor is already open.
     func show(with image: NSImage) {
-        // If editor is already open, add image to canvas instead of replacing
-        if editorWindow != nil {
-            NotificationCenter.default.post(
-                name: Notification.Name("ScreenshotEditorAddImage"),
-                object: image
-            )
-            editorWindow?.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
+        show(with: [image])
+    }
+
+    /// Opens the editor with `images` as layers, or adds them to the open editor.
+    func show(with images: [NSImage]) {
+        guard !images.isEmpty else { return }
+
+        if let window, let model {
+            images.forEach { model.addImage($0) }
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate()
             return
         }
+        createWindow(with: images)
+    }
 
-        isClosing = false
-        createWindow(with: image)
+    /// Closes the editor window.
+    func close() {
+        window?.performClose(nil)
     }
-    
-    private func closeImmediately() {
-        guard let window = editorWindow else { return }
-        window.delegate = nil
-        window.contentView = nil
-        window.orderOut(nil)
-        editorWindow = nil
-    }
-    
-    private func createWindow(with image: NSImage) {
-        let screen = NSScreen.main ?? NSScreen.screens[0]
-        let windowWidth = min(screen.frame.width * 0.9, 1600)
-        let windowHeight = min(screen.frame.height * 0.9, 1000)
-        
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: windowWidth, height: windowHeight),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView, .unifiedTitleAndToolbar],
+
+    // MARK: - Window
+
+    private func createWindow(with images: [NSImage]) {
+        let model = ScreenshotEditorViewModel(images: images)
+
+        let window = EditorWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
-        
-        window.titlebarAppearsTransparent = true
-        window.titleVisibility = .hidden
-        window.backgroundColor = .clear
-        window.isMovableByWindowBackground = false
-        window.minSize = NSSize(width: 800, height: 600)
-        window.center()
+        window.isReleasedWhenClosed = false
+        window.title = String(localized: "Clické Editor")
+        window.toolbarStyle = .unified
+        window.minSize = NSSize(width: 760, height: 520)
+
+        // Restore the last frame, or use 85% of the screen (up to 1600 × 1000).
+        // Done before the content is set, so SwiftUI lays the editor out once, at its final size.
+        if !window.setFrameUsingName(Self.frameAutosaveName) {
+            let visible = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+            let size = NSSize(width: min(visible.width * 0.85, 1600), height: min(visible.height * 0.85, 1000))
+            window.setFrame(NSRect(origin: .zero, size: size), display: false)
+            window.center()
+        }
+        window.setFrameAutosaveName(Self.frameAutosaveName)
+
+        let hostingController = NSHostingController(rootView: ScreenshotEditorView(model: model))
+        hostingController.sceneBridgingOptions = []
+        hostingController.sizingOptions = []
+        hostingController.view.frame = NSRect(origin: .zero, size: window.contentRect(forFrameRect: window.frame).size)
+        window.contentViewController = hostingController
         window.delegate = self
-        
-        // Remove toolbar separator for seamless look
-        window.titlebarSeparatorStyle = .none
-        
-        editorWindow = window
-        
-        let editorView = ScreenshotEditorView(
-            originalImage: image,
-            onCopy: { [weak self] renderedImage in
-                self?.copyAndClose(renderedImage)
-            },
-            onClose: { [weak self] in
-                self?.close()
-            }
-        )
-        
-        window.contentView = NSHostingView(rootView: editorView)
+        window.commandHandler = { [weak model] command in
+            model?.perform(command) ?? false
+        }
+
+        let toolbarController = EditorToolbarController(model: model)
+        toolbarController.window = window
+        window.toolbar = toolbarController.toolbar
+
+        model.window = window
+        self.window = window
+        self.model = model
+        self.toolbarController = toolbarController
+
         window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.activate()
     }
-    
-    private func copyAndClose(_ image: NSImage) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.writeObjects([image])
-        
-        close()
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            ToastManager.shared.show(message: "Copied", icon: "doc.on.clipboard.fill", success: true)
-        }
-    }
-    
-    /// Closes the editor window.
-    func close() {
-        guard !isClosing, let window = editorWindow else { return }
-        isClosing = true
-        
-        // Clear content view FIRST to release SwiftUI views
-        window.contentView = nil
-        window.delegate = nil
-        
-        // Close without animation to avoid memory issues
-        window.orderOut(nil)
-        editorWindow = nil
-        isClosing = false
-    }
-    
+
     // MARK: - NSWindowDelegate
-    
+
     func windowWillClose(_ notification: Notification) {
-        guard !isClosing else { return }
-        isClosing = true
-        
-        if let window = editorWindow {
-            window.contentView = nil
-            window.delegate = nil
-        }
-        editorWindow = nil
-        isClosing = false
+        guard let closing = notification.object as? EditorWindow, closing === window else { return }
+        model?.editorWillClose()
+        // Release the SwiftUI hierarchy and the images right away.
+        closing.commandHandler = nil
+        closing.contentViewController = nil
+        closing.delegate = nil
+        closing.toolbar = nil
+        window = nil
+        model = nil
+        toolbarController = nil
     }
-    
-    func windowShouldClose(_ sender: NSWindow) -> Bool {
-        close()
-        return false // We handle closing manually
+}
+
+// MARK: - Editor Window
+
+/// The editor's window. It handles the editor's keyboard shortcuts itself, so they work even
+/// when the app has no menu bar (menu bar app / accessory mode).
+final class EditorWindow: NSWindow {
+    /// Performs an editor command; returns `false` if it didn't apply.
+    var commandHandler: ((EditorCommand) -> Bool)?
+
+    /// A text field is being edited: leave standard editing keys (⌘C, ⌘Z, arrows…) to it.
+    private var isEditingText: Bool {
+        firstResponder is NSText
+    }
+
+    // MARK: ⌘ Shortcuts
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if let command = keyEquivalentCommand(for: event), commandHandler?(command) == true {
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    private func keyEquivalentCommand(for event: NSEvent) -> EditorCommand? {
+        let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        guard modifiers.contains(.command), !modifiers.contains(.control),
+              let key = event.charactersIgnoringModifiers?.lowercased() else { return nil }
+        let shift = modifiers.contains(.shift)
+        let option = modifiers.contains(.option)
+
+        switch key {
+        case "w" where !shift && !option: return .close
+        case "s" where !option: return .save
+        case "o" where !shift && !option: return .addImage
+        case "i" where option && !shift: return .toggleInspector
+        case "c" where !shift && !option && !isEditingText: return .copy
+        case "z" where !option && !isEditingText: return shift ? .redo : .undo
+        case "=", "+": return .zoomIn
+        case "-", "_": return .zoomOut
+        case "0" where !shift && !option: return .zoomToFit
+        case "1" where !shift && !option: return .actualSize
+        default: return nil
+        }
+    }
+
+    // MARK: Plain Keys
+
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .keyDown, attachedSheet == nil, !isEditingText,
+           let command = plainKeyCommand(for: event), commandHandler?(command) == true {
+            return
+        }
+        super.sendEvent(event)
+    }
+
+    private func plainKeyCommand(for event: NSEvent) -> EditorCommand? {
+        let modifiers = event.modifierFlags.intersection([.command, .option, .control])
+        guard modifiers.isEmpty else { return nil }
+        let step: CGFloat = event.modifierFlags.contains(.shift) ? 10 : 1
+
+        switch Int(event.keyCode) {
+        case 51, 117: return .deleteSelection // ⌫, ⌦
+        case 53: return .deselect // Esc
+        case 123: return .nudge(dx: -step, dy: 0)
+        case 124: return .nudge(dx: step, dy: 0)
+        case 125: return .nudge(dx: 0, dy: step)
+        case 126: return .nudge(dx: 0, dy: -step)
+        default: return nil
+        }
+    }
+
+    // MARK: Menu Actions
+
+    // When the app shows its menu bar, Edit and File menu items reach the editor through the responder chain.
+
+    @objc func copy(_ sender: Any?) {
+        _ = commandHandler?(.copy)
+    }
+
+    @objc func undo(_ sender: Any?) {
+        _ = commandHandler?(.undo)
+    }
+
+    @objc func redo(_ sender: Any?) {
+        _ = commandHandler?(.redo)
+    }
+
+    @objc func saveDocument(_ sender: Any?) {
+        _ = commandHandler?(.save)
     }
 }

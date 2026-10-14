@@ -1,543 +1,502 @@
 import SwiftUI
 import AppKit
 
-// MARK: - Mockup Style
+// MARK: - RGBA Color
 
-/// Defines the visual style applied to the screenshot mockup.
-enum MockupStyle: String, CaseIterable, Identifiable {
-    case defaultStyle
-    case glassEffect
-    case border
-    
-    var id: String { rawValue }
-    
-    var displayName: String {
-        switch self {
-        case .defaultStyle: return "Default"
-        case .glassEffect: return "Glass"
-        case .border: return "Border"
-        }
-    }
-}
+/// A Codable sRGB color. SwiftUI's `Color` isn't Codable nor reliably comparable,
+/// so every color that is part of the style (and therefore persisted / diffed) uses this type.
+nonisolated struct RGBAColor: Codable, Hashable, Sendable {
+    var red: Double
+    var green: Double
+    var blue: Double
+    var alpha: Double = 1
 
-// MARK: - Border Style
+    init(red: Double, green: Double, blue: Double, alpha: Double = 1) {
+        self.red = red
+        self.green = green
+        self.blue = blue
+        self.alpha = alpha
+    }
 
-/// Defines the corner style for screenshot borders.
-enum BorderStyle: String, CaseIterable, Identifiable {
-    case sharp
-    case curved
-    case round
-    
-    var id: String { rawValue }
-    
-    var displayName: String {
-        switch self {
-        case .sharp: return "Sharp"
-        case .curved: return "Curved"
-        case .round: return "Round"
+    /// Creates a color from a hex string ("fff", "ffffff" or "ffffffff", with or without "#").
+    init(hex: String) {
+        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var int: UInt64 = 0
+        Scanner(string: hex).scanHexInt64(&int)
+        let a, r, g, b: UInt64
+        switch hex.count {
+        case 3: (a, r, g, b) = (255, (int >> 8) * 17, (int >> 4 & 0xF) * 17, (int & 0xF) * 17)
+        case 6: (a, r, g, b) = (255, int >> 16, int >> 8 & 0xFF, int & 0xFF)
+        case 8: (a, r, g, b) = (int >> 24, int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF)
+        default: (a, r, g, b) = (255, 0, 0, 0)
         }
+        self.init(red: Double(r) / 255, green: Double(g) / 255, blue: Double(b) / 255, alpha: Double(a) / 255)
     }
-    
-    var cornerRadius: CGFloat {
-        switch self {
-        case .sharp: return 0
-        case .curved: return 12
-        case .round: return 24
-        }
+
+    /// Converts any SwiftUI color (e.g. coming from a `ColorPicker`) to sRGB components.
+    init(_ color: Color) {
+        self.init(NSColor(color))
     }
+
+    init(_ nsColor: NSColor) {
+        let srgb = nsColor.usingColorSpace(.sRGB) ?? .black
+        self.init(red: srgb.redComponent, green: srgb.greenComponent, blue: srgb.blueComponent, alpha: srgb.alphaComponent)
+    }
+
+    var color: Color { Color(.sRGB, red: red, green: green, blue: blue, opacity: alpha) }
+    var nsColor: NSColor { NSColor(srgbRed: red, green: green, blue: blue, alpha: alpha) }
+
+    static let white = RGBAColor(red: 1, green: 1, blue: 1)
+    static let black = RGBAColor(red: 0, green: 0, blue: 0)
 }
 
 // MARK: - Background Type
 
-/// Defines the type of background for the screenshot canvas.
-enum BackgroundType: String, CaseIterable, Identifiable {
+/// The kind of background drawn behind the screenshots.
+nonisolated enum BackgroundType: String, Codable, CaseIterable, Identifiable {
     case transparent
     case color
     case gradient
     case image
-    
+
     var id: String { rawValue }
-    
-    var displayName: String {
+
+    var displayName: LocalizedStringKey {
         switch self {
-        case .transparent: return "Transparent"
-        case .color: return "Color"
-        case .gradient: return "Gradient"
-        case .image: return "Image"
-        }
-    }
-    
-    var icon: String {
-        switch self {
-        case .transparent: return "checkerboard.rectangle"
-        case .color: return "circle.fill"
-        case .gradient: return "circle.lefthalf.striped.horizontal"
-        case .image: return "photo"
+        case .transparent: "Transparent"
+        case .color: "Color"
+        case .gradient: "Gradient"
+        case .image: "Image"
         }
     }
 }
 
-// MARK: - Magic Color Preset
+// MARK: - Solid Color Swatches
 
-/// A solid color preset with optional premium status.
-struct MagicPreset: Identifiable, Equatable {
-    let id: UUID
-    let colors: [Color]
-    let isPremium: Bool
-    
-    init(colors: [Color], isPremium: Bool = false) {
-        self.id = UUID()
-        self.colors = colors
-        self.isPremium = isPremium
-    }
-    
-    // Cached presets - created once
-    private static let _presets: [MagicPreset] = [
-        MagicPreset(colors: [Color(hex: "ffffff")]),
-        MagicPreset(colors: [Color(hex: "1a1a1a")]),
-        MagicPreset(colors: [Color(hex: "667eea")]),
-        MagicPreset(colors: [Color(hex: "f953c6")]),
-        MagicPreset(colors: [Color(hex: "11998e")]),
+/// The solid colors offered as one-click swatches (a `ColorPicker` covers everything else).
+nonisolated enum ColorSwatch {
+    static let colors: [RGBAColor] = [
+        RGBAColor(hex: "ffffff"),
+        RGBAColor(hex: "f2f2f7"),
+        RGBAColor(hex: "8e8e93"),
+        RGBAColor(hex: "1c1c1e"),
+        RGBAColor(hex: "000000"),
+        RGBAColor(hex: "667eea"),
+        RGBAColor(hex: "0a84ff"),
+        RGBAColor(hex: "11998e"),
+        RGBAColor(hex: "34c759"),
+        RGBAColor(hex: "ffcc00"),
+        RGBAColor(hex: "ff9500"),
+        RGBAColor(hex: "f953c6"),
     ]
-    
-    static var presets: [MagicPreset] { _presets }
 }
 
-// MARK: - Gradient Style
+// MARK: - Gradient
 
-/// Defines the type of gradient effect.
-enum GradientStyle: String, CaseIterable, Identifiable {
+/// The geometry of a gradient fill.
+nonisolated enum GradientStyle: String, Codable, CaseIterable, Identifiable {
     case linear
     case radial
     case angular
-    
+
     var id: String { rawValue }
-    
-    var displayName: String {
+
+    var displayName: LocalizedStringKey {
         switch self {
-        case .linear: return "Linear"
-        case .radial: return "Radial"
-        case .angular: return "Angular"
-        }
-    }
-    
-    var icon: String {
-        switch self {
-        case .linear: return "arrow.up.right"
-        case .radial: return "circle.dashed"
-        case .angular: return "arrow.triangle.2.circlepath"
+        case .linear: "Linear"
+        case .radial: "Radial"
+        case .angular: "Angular"
         }
     }
 }
 
-// MARK: - Simple Gradient Configuration
-
-/// Configuration for gradient backgrounds with effects.
-struct SimpleGradientConfig: Equatable {
+/// A two- or three-color gradient.
+nonisolated struct GradientFill: Codable, Hashable, Sendable {
     var style: GradientStyle = .linear
-    var color1: Color = Color(hex: "667eea")
-    var color2: Color = Color(hex: "764ba2")
-    var color3: Color = Color(hex: "f953c6")
-    var useThreeColors: Bool = true
+    /// 2 or 3 color stops, evenly spaced.
+    var colors: [RGBAColor] = [RGBAColor(hex: "667eea"), RGBAColor(hex: "764ba2"), RGBAColor(hex: "f953c6")]
+    /// Direction of a linear gradient, in degrees (0 = bottom to top, 90 = left to right).
     var angle: Double = 135
-    
-    // Effects
-    var blurAmount: Double = 0
-    var noiseAmount: Double = 0
-    var saturation: Double = 100
-    var brightness: Double = 100
-    
-    static let `default` = SimpleGradientConfig()
-    
-    private var gradientColors: [Color] {
-        useThreeColors ? [color1, color2, color3] : [color1, color3]
-    }
-    
-    private var linearStartPoint: UnitPoint {
+
+    private var swiftUIColors: [Color] { colors.map(\.color) }
+
+    private var startPoint: UnitPoint {
         let radians = (angle - 90) * .pi / 180
         return UnitPoint(x: 0.5 - cos(radians) * 0.5, y: 0.5 - sin(radians) * 0.5)
     }
-    
-    private var linearEndPoint: UnitPoint {
+
+    private var endPoint: UnitPoint {
         let radians = (angle - 90) * .pi / 180
         return UnitPoint(x: 0.5 + cos(radians) * 0.5, y: 0.5 + sin(radians) * 0.5)
     }
-    
-    @ViewBuilder
-    func gradientView(size: CGSize, isRendering: Bool = false) -> some View {
-        gradientBase(size: size)
-            .saturation(isRendering ? saturation / 100 : 1.0)
-            .brightness(isRendering ? (brightness - 100) / 100 : 0.0)
-            .colorAdjustments(
-                saturation: isRendering ? 1.0 : saturation / 100,
-                brightness: isRendering ? 0.0 : (brightness - 100) / 100
-            )
-            .frame(width: size.width, height: size.height)
-    }
-    
-    @ViewBuilder
-    func previewView(size: CGSize) -> some View {
-        gradientBase(size: size)
-            .frame(width: size.width, height: size.height)
-    }
-    
-    @ViewBuilder
-    private func gradientBase(size: CGSize) -> some View {
+
+    /// The gradient as a view filling `size` (the size only matters for the radial radius).
+    @MainActor @ViewBuilder
+    func view(size: CGSize) -> some View {
         switch style {
         case .linear:
-            LinearGradient(colors: gradientColors, startPoint: linearStartPoint, endPoint: linearEndPoint)
+            LinearGradient(colors: swiftUIColors, startPoint: startPoint, endPoint: endPoint)
         case .radial:
-            RadialGradient(colors: gradientColors, center: .center, startRadius: 0, endRadius: max(size.width, size.height) * 0.7)
+            RadialGradient(colors: swiftUIColors, center: .center, startRadius: 0, endRadius: max(size.width, size.height) * 0.7)
         case .angular:
-            AngularGradient(colors: gradientColors + [gradientColors.first ?? color1], center: .center)
+            AngularGradient(colors: swiftUIColors + [swiftUIColors.first ?? .clear], center: .center)
         }
     }
 }
 
-// MARK: - Grain/Noise Overlay
-
-/// A view that applies a film grain noise effect.
-struct GrainOverlay: View {
-    let intensity: Double
-    
-    var body: some View {
-        Rectangle()
-            .fill(.white)
-            .colorEffect(ShaderLibrary.noise(.float(intensity)))
-            .allowsHitTesting(false)
-            .blendMode(.overlay)
-            .opacity(intensity * 0.5)
-    }
-}
-
-// MARK: - Simple Gradient Presets
-
-/// A pre-configured gradient preset.
-struct SimpleGradientPreset: Identifiable, Equatable {
-    let id: UUID
+/// A named gradient offered as a one-click tile.
+nonisolated struct GradientPreset: Identifiable {
     let name: String
-    let config: SimpleGradientConfig
-    
-    init(name: String, config: SimpleGradientConfig) {
-        self.id = UUID()
+    let fill: GradientFill
+
+    var id: String { name }
+
+    private init(_ name: String, _ hexes: [String], style: GradientStyle = .linear, angle: Double = 135) {
         self.name = name
-        self.config = config
+        self.fill = GradientFill(style: style, colors: hexes.map(RGBAColor.init(hex:)), angle: angle)
     }
-    
-    static func == (lhs: SimpleGradientPreset, rhs: SimpleGradientPreset) -> Bool {
-        lhs.id == rhs.id
-    }
-    
-    private static let _presets: [SimpleGradientPreset] = [
-        SimpleGradientPreset(name: "Cinder", config: SimpleGradientConfig(
-            color1: Color(hex: "120806"), color2: Color(hex: "6b1f14"), color3: Color(hex: "6b1f14"), useThreeColors: false
-        )),
-        SimpleGradientPreset(name: "Trench", config: SimpleGradientConfig(
-            color1: Color(hex: "050a14"), color2: Color(hex: "233a52"), color3: Color(hex: "233a52"), useThreeColors: false
-        )),
-        SimpleGradientPreset(name: "Black Pine", config: SimpleGradientConfig(
-            color1: Color(hex: "070f0b"), color2: Color(hex: "2f5a45"), color3: Color(hex: "2f5a45"), useThreeColors: false
-        )),
-        SimpleGradientPreset(name: "Obsidian Sand", config: SimpleGradientConfig(
-            color1: Color(hex: "0e0c0b"), color2: Color(hex: "6a5a4a"), color3: Color(hex: "6a5a4a"), useThreeColors: false
-        )),
-        SimpleGradientPreset(name: "Midnight Surge", config: SimpleGradientConfig(
-            color1: Color(hex: "020409"), color2: Color(hex: "0b1f2a"), color3: Color(hex: "1f4e5f"), useThreeColors: true
-        )),
+
+    static let presets: [GradientPreset] = [
+        GradientPreset("Cinder", ["120806", "6b1f14"]),
+        GradientPreset("Trench", ["050a14", "233a52"]),
+        GradientPreset("Black Pine", ["070f0b", "2f5a45"]),
+        GradientPreset("Obsidian Sand", ["0e0c0b", "6a5a4a"]),
+        GradientPreset("Midnight Surge", ["020409", "0b1f2a", "1f4e5f"]),
+        GradientPreset("Graphite", ["232526", "414345"]),
+        GradientPreset("Dusk", ["667eea", "764ba2", "f953c6"]),
+        GradientPreset("Sunset", ["ff7e5f", "feb47b"]),
+        GradientPreset("Ocean", ["2193b0", "6dd5ed"]),
+        GradientPreset("Aurora", ["11998e", "38ef7d"]),
+        GradientPreset("Peach", ["ffecd2", "fcb69f"]),
+        GradientPreset("Lavender", ["e0c3fc", "8ec5fc"]),
     ]
-    
-    static var presets: [SimpleGradientPreset] { _presets }
 }
 
-// MARK: - Text Overlay
+// MARK: - Background Image
 
-/// A text element that can be placed on the screenshot.
-struct TextOverlay: Identifiable, Equatable {
-    let id = UUID()
-    var text: String = "Text"
-    var fontSize: CGFloat = 24
-    var fontWeight: Font.Weight = .semibold
-    var color: Color = .white
-    var position: CGPoint = .zero
-    var rotation: Double = 0
-    var opacity: Double = 1.0
-    var isBlurred: Bool = false
-}
+/// Where a background image comes from. Bundled wallpapers are stored by base name (not by path)
+/// so a persisted style survives app updates and asset format changes.
+nonisolated enum BackgroundImageSource: Codable, Hashable, Sendable {
+    /// A wallpaper shipped in the app bundle, identified by its file name without extension.
+    case bundled(String)
+    /// An image file picked by the user.
+    case file(URL)
 
-// MARK: - Redact Region
+    /// The default wallpaper of a fresh install.
+    static let defaultWallpaper = BackgroundImageSource.bundled("Black and White Gradient Macbook Wallpaper_Texture")
 
-/// A region of the screenshot to be redacted/obscured.
-struct RedactRegion: Identifiable, Equatable {
-    let id = UUID()
-    var rect: CGRect
-    var style: RedactStyle = .blur
-}
+    static let imageExtensions = ["heic", "jpg", "jpeg", "png", "tiff", "webp"]
 
-/// Defines the style of redaction to apply.
-enum RedactStyle: String, CaseIterable, Identifiable {
-    case blur
-    case pixelate
-    case blackBar
-    
-    var id: String { rawValue }
-    
-    var displayName: String {
+    /// The file URL to load, or `nil` if the image no longer exists.
+    var url: URL? {
         switch self {
-        case .blur: return "Blur"
-        case .pixelate: return "Pixelate"
-        case .blackBar: return "Black Bar"
-        }
-    }
-    
-    var icon: String {
-        switch self {
-        case .blur: return "aqi.medium"
-        case .pixelate: return "square.dashed"
-        case .blackBar: return "rectangle.fill"
-        }
-    }
-    
-    var color: Color {
-        switch self {
-        case .blur: return .purple
-        case .pixelate: return .orange
-        case .blackBar: return .gray
+        case .bundled(let name):
+            guard let resources = Bundle.main.resourceURL else { return nil }
+            for folder in [resources.appendingPathComponent("public"), resources] {
+                for ext in Self.imageExtensions {
+                    let candidate = folder.appendingPathComponent(name).appendingPathExtension(ext)
+                    if FileManager.default.fileExists(atPath: candidate.path) { return candidate }
+                }
+            }
+            return nil
+        case .file(let url):
+            return FileManager.default.fileExists(atPath: url.path) ? url : nil
         }
     }
 }
 
-// MARK: - Social Media Export Presets
+// MARK: - Background Effects
 
-/// A preset for exporting screenshots to social media platforms.
-struct SocialMediaPreset: Identifiable, Equatable {
-    let id: UUID
+/// Effects applied to the background (never to the screenshots themselves).
+nonisolated struct BackgroundEffects: Codable, Hashable, Sendable {
+    /// Gaussian blur radius, in canvas points.
+    var blur: Double = 0
+    /// Film grain amount, 0–100.
+    var grain: Double = 0
+    /// Saturation, in percent (100 = unchanged).
+    var saturation: Double = 100
+    /// Brightness, in percent (100 = unchanged).
+    var brightness: Double = 100
+
+    var isDefault: Bool { self == BackgroundEffects() }
+}
+
+// MARK: - Canvas Size Presets
+
+/// A fixed canvas size, mostly for social networks. Exports are exactly `width × height` pixels.
+nonisolated struct SocialMediaPreset: Identifiable, Hashable, Sendable {
     let platform: String
     let name: String
     let width: Int
     let height: Int
-    let icon: String
     let ratio: String
-    
-    init(platform: String, name: String, width: Int, height: Int, icon: String, ratio: String) {
-        self.id = UUID()
-        self.platform = platform
-        self.name = name
-        self.width = width
-        self.height = height
-        self.icon = icon
-        self.ratio = ratio
-    }
-    
-    var aspectRatio: CGFloat {
-        CGFloat(width) / CGFloat(height)
-    }
-    
-    private static let _presets: [SocialMediaPreset] = [
-        SocialMediaPreset(platform: "Twitter", name: "Tweet", width: 1200, height: 675, icon: "bird", ratio: "16:9"),
-        SocialMediaPreset(platform: "Twitter", name: "Cover", width: 1500, height: 500, icon: "bird", ratio: "3:1"),
-        SocialMediaPreset(platform: "YouTube", name: "Thumbnail", width: 1280, height: 720, icon: "play.rectangle.fill", ratio: "16:9"),
-        SocialMediaPreset(platform: "YouTube", name: "Banner", width: 2560, height: 1440, icon: "play.rectangle.fill", ratio: "16:9"),
-        SocialMediaPreset(platform: "Instagram", name: "Post", width: 1080, height: 1080, icon: "camera", ratio: "1:1"),
-        SocialMediaPreset(platform: "Instagram", name: "Portrait", width: 1080, height: 1350, icon: "camera", ratio: "4:5"),
-        SocialMediaPreset(platform: "Instagram", name: "Story", width: 1080, height: 1920, icon: "camera", ratio: "9:16"),
-        SocialMediaPreset(platform: "Pinterest", name: "Long", width: 1000, height: 2100, icon: "pin", ratio: "10:21"),
-        SocialMediaPreset(platform: "Pinterest", name: "Optimal", width: 1000, height: 1500, icon: "pin", ratio: "2:3"),
-        SocialMediaPreset(platform: "Pinterest", name: "Square", width: 1000, height: 1000, icon: "pin", ratio: "1:1"),
-        SocialMediaPreset(platform: "Dribbble", name: "Shot", width: 1600, height: 1200, icon: "basketball", ratio: "4:3"),
-        SocialMediaPreset(platform: "Dribbble", name: "Full", width: 1600, height: 2400, icon: "basketball", ratio: "2:3"),
-        SocialMediaPreset(platform: "LinkedIn", name: "Post", width: 1200, height: 627, icon: "person.crop.rectangle", ratio: "1.91:1"),
-        SocialMediaPreset(platform: "LinkedIn", name: "Cover", width: 1584, height: 396, icon: "person.crop.rectangle", ratio: "4:1"),
-        SocialMediaPreset(platform: "Standard", name: "16:9", width: 1920, height: 1080, icon: "rectangle", ratio: "16:9"),
-        SocialMediaPreset(platform: "Standard", name: "4:3", width: 1920, height: 1440, icon: "rectangle", ratio: "4:3"),
-        SocialMediaPreset(platform: "Standard", name: "1:1", width: 1080, height: 1080, icon: "square", ratio: "1:1"),
-        SocialMediaPreset(platform: "Standard", name: "3:2", width: 1920, height: 1280, icon: "rectangle", ratio: "3:2"),
+
+    /// Stable identifier, used for persistence.
+    var id: String { "\(platform).\(name)" }
+
+    var aspectRatio: CGFloat { CGFloat(width) / CGFloat(height) }
+    var size: CGSize { CGSize(width: width, height: height) }
+
+    static let presets: [SocialMediaPreset] = [
+        SocialMediaPreset(platform: "Twitter", name: "Post", width: 1200, height: 675, ratio: "16:9"),
+        SocialMediaPreset(platform: "Twitter", name: "Header", width: 1500, height: 500, ratio: "3:1"),
+        SocialMediaPreset(platform: "Instagram", name: "Square", width: 1080, height: 1080, ratio: "1:1"),
+        SocialMediaPreset(platform: "Instagram", name: "Portrait", width: 1080, height: 1350, ratio: "4:5"),
+        SocialMediaPreset(platform: "Instagram", name: "Story", width: 1080, height: 1920, ratio: "9:16"),
+        SocialMediaPreset(platform: "LinkedIn", name: "Post", width: 1200, height: 627, ratio: "1.91:1"),
+        SocialMediaPreset(platform: "LinkedIn", name: "Cover", width: 1584, height: 396, ratio: "4:1"),
+        SocialMediaPreset(platform: "YouTube", name: "Thumbnail", width: 1280, height: 720, ratio: "16:9"),
+        SocialMediaPreset(platform: "YouTube", name: "Banner", width: 2560, height: 1440, ratio: "16:9"),
+        SocialMediaPreset(platform: "Dribbble", name: "Shot", width: 1600, height: 1200, ratio: "4:3"),
+        SocialMediaPreset(platform: "Dribbble", name: "Tall", width: 1600, height: 2400, ratio: "2:3"),
+        SocialMediaPreset(platform: "Pinterest", name: "Pin", width: 1000, height: 1500, ratio: "2:3"),
+        SocialMediaPreset(platform: "Pinterest", name: "Long", width: 1000, height: 2100, ratio: "10:21"),
+        SocialMediaPreset(platform: "Standard", name: "16:9", width: 1920, height: 1080, ratio: "16:9"),
+        SocialMediaPreset(platform: "Standard", name: "4:3", width: 1920, height: 1440, ratio: "4:3"),
+        SocialMediaPreset(platform: "Standard", name: "3:2", width: 1920, height: 1280, ratio: "3:2"),
+        SocialMediaPreset(platform: "Standard", name: "1:1", width: 1080, height: 1080, ratio: "1:1"),
     ]
-    
-    static var presets: [SocialMediaPreset] { _presets }
-    
-    static var groupedByPlatform: [String: [SocialMediaPreset]] {
-        Dictionary(grouping: presets) { $0.platform }
+
+    static func preset(withID id: String?) -> SocialMediaPreset? {
+        guard let id else { return nil }
+        return presets.first { $0.id == id }
     }
 }
 
 // MARK: - Screenshot Style Configuration
 
-/// Complete configuration for screenshot styling and export.
-struct ScreenshotStyleConfig: Equatable {
-    // Mockup
-    var mockupStyle: MockupStyle = .defaultStyle
-    var showMockup: Bool = true
-    var mockupBorderSize: CGFloat = 3
-    var borderColor: Color = Color(hex: "2d2d2d")
-    
-    // Border
-    var borderStyle: BorderStyle = .curved
-    var borderRadius: CGFloat = 20
-    
-    // Transform
-    var rotation: Double = 0
-    var imageScale: CGFloat = 100
-    var screenshotOffset: CGSize = .zero
-    
-    // 3D Transform
-    var rotationX: Double = 0
-    var rotationY: Double = 0
-    var perspective: Double = 0
-    
-    // Background
+/// Canvas-level style: background, effects and canvas size.
+/// Per-layer appearance (frame, corners, shadow, transforms) lives in `LayerStyle` / `CanvasItem`.
+nonisolated struct ScreenshotStyleConfig: Codable, Hashable, Sendable {
     var backgroundType: BackgroundType = .image
-    var selectedMagicPreset: MagicPreset? = nil
-    var backgroundImageURL: URL? = nil
-    var customColor: Color = .white
-    
-    // Simple Gradient
-    var gradientConfig: SimpleGradientConfig = SimpleGradientPreset.presets.first?.config ?? .default
-    var selectedGradientPreset: SimpleGradientPreset? = SimpleGradientPreset.presets.first
-    
-    // Text Overlays
-    var textOverlays: [TextOverlay] = []
-    
-    // Redact/Blur regions
-    var redactEnabled: Bool = false
-    var redactStyle: RedactStyle = .blur
-    var redactRegions: [RedactRegion] = []
-    
-    // Social Media Export (default: Tweet format)
-    var selectedSocialPreset: SocialMediaPreset? = SocialMediaPreset.presets.first
-    
-    // Canvas
-    var padding: CGFloat = 80
-    var zoom: CGFloat = 100
-    
-    // Export Scale
-    var scale: CGFloat = 1.0
-    
-    static let `default` = ScreenshotStyleConfig()
-    
-    // MARK: - Transform Hash
-    
-    /// Hash of transform properties for consolidated animations.
-    var transformHash: Int {
-        var hasher = Hasher()
-        hasher.combine(rotation)
-        hasher.combine(rotationX)
-        hasher.combine(rotationY)
-        hasher.combine(scale)
-        hasher.combine(imageScale)
-        hasher.combine(borderRadius)
-        return hasher.finalize()
-    }
-    
-    // MARK: - Render Hash
-    
-    /// Hash of properties that affect final render (for cache invalidation).
-    var renderHash: Int {
-        var hasher = Hasher()
-        hasher.combine(mockupStyle)
-        hasher.combine(mockupBorderSize)
-        hasher.combine(borderRadius)
-        hasher.combine(rotation)
-        hasher.combine(rotationX)
-        hasher.combine(rotationY)
-        hasher.combine(scale)
-        hasher.combine(imageScale)
-        hasher.combine(backgroundType)
-        hasher.combine(backgroundImageURL)
-        hasher.combine(gradientConfig.style)
-        hasher.combine(gradientConfig.angle)
-        hasher.combine(gradientConfig.blurAmount)
-        hasher.combine(gradientConfig.noiseAmount)
-        hasher.combine(gradientConfig.saturation)
-        hasher.combine(gradientConfig.brightness)
-        hasher.combine(padding)
-        hasher.combine(selectedSocialPreset?.id)
-        hasher.combine(selectedMagicPreset?.id)
-        hasher.combine(textOverlays.count)
-        hasher.combine(redactRegions.count)
-        return hasher.finalize()
-    }
-    
-    // MARK: - Equatable
-    
-    static func == (lhs: ScreenshotStyleConfig, rhs: ScreenshotStyleConfig) -> Bool {
-        // Quick check with render hash first
-        guard lhs.renderHash == rhs.renderHash else { return false }
+    var backgroundColor: RGBAColor = .white
+    var gradient: GradientFill = GradientPreset.presets[0].fill
+    var backgroundImage: BackgroundImageSource = .defaultWallpaper
+    var effects = BackgroundEffects()
 
-        // Full comparison for remaining properties
-        return lhs.mockupStyle == rhs.mockupStyle &&
-               lhs.showMockup == rhs.showMockup &&
-               lhs.mockupBorderSize == rhs.mockupBorderSize &&
-               lhs.borderRadius == rhs.borderRadius &&
-               lhs.rotation == rhs.rotation &&
-               lhs.rotationX == rhs.rotationX &&
-               lhs.rotationY == rhs.rotationY &&
-               lhs.scale == rhs.scale &&
-               lhs.imageScale == rhs.imageScale &&
-               lhs.backgroundType == rhs.backgroundType &&
-               lhs.backgroundImageURL == rhs.backgroundImageURL &&
-               lhs.gradientConfig == rhs.gradientConfig &&
-               lhs.padding == rhs.padding &&
-               lhs.zoom == rhs.zoom &&
-               lhs.screenshotOffset == rhs.screenshotOffset &&
-               lhs.selectedSocialPreset?.id == rhs.selectedSocialPreset?.id
+    /// Identifier of the selected `SocialMediaPreset`; `nil` ("Auto") = the canvas wraps the
+    /// screenshot and exports at its native resolution.
+    var canvasPresetID: String?
+    /// Space around the screenshot, in canvas points.
+    var padding: Double = 80
+
+    static let `default` = ScreenshotStyleConfig()
+
+    var canvasPreset: SocialMediaPreset? {
+        get { SocialMediaPreset.preset(withID: canvasPresetID) }
+        set { canvasPresetID = newValue?.id }
+    }
+
+    /// Whether the export has no transparent pixels (lets the encoder drop the alpha channel).
+    var isOpaque: Bool { backgroundType != .transparent }
+
+    init() {}
+
+    // Tolerant decoding: a missing or unreadable key falls back to its default,
+    // so adding a property never discards the user's saved style.
+    private enum CodingKeys: String, CodingKey {
+        case backgroundType, backgroundColor, gradient, backgroundImage, effects, canvasPresetID, padding
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = ScreenshotStyleConfig.default
+        backgroundType = (try? c.decode(BackgroundType.self, forKey: .backgroundType)) ?? d.backgroundType
+        backgroundColor = (try? c.decode(RGBAColor.self, forKey: .backgroundColor)) ?? d.backgroundColor
+        gradient = (try? c.decode(GradientFill.self, forKey: .gradient)) ?? d.gradient
+        backgroundImage = (try? c.decode(BackgroundImageSource.self, forKey: .backgroundImage)) ?? d.backgroundImage
+        effects = (try? c.decode(BackgroundEffects.self, forKey: .effects)) ?? d.effects
+        canvasPresetID = c.contains(.canvasPresetID) ? (try? c.decodeIfPresent(String.self, forKey: .canvasPresetID)) : d.canvasPresetID
+        padding = (try? c.decode(Double.self, forKey: .padding)) ?? d.padding
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(backgroundType, forKey: .backgroundType)
+        try c.encode(backgroundColor, forKey: .backgroundColor)
+        try c.encode(gradient, forKey: .gradient)
+        try c.encode(backgroundImage, forKey: .backgroundImage)
+        try c.encode(effects, forKey: .effects)
+        try c.encode(canvasPresetID, forKey: .canvasPresetID) // explicit null = "Auto"
+        try c.encode(padding, forKey: .padding)
+    }
+}
+
+// MARK: - Mockup Style
+
+/// The frame drawn around a screenshot.
+nonisolated enum MockupStyle: String, Codable, CaseIterable, Identifiable {
+    case none
+    case glass
+    case border
+    case window
+
+    var id: String { rawValue }
+
+    var displayName: LocalizedStringKey {
+        switch self {
+        case .none: "None"
+        case .glass: "Glass"
+        case .border: "Border"
+        case .window: "Window"
+        }
+    }
+}
+
+/// Light or dark title bar for the macOS window mockup.
+nonisolated enum WindowChromeAppearance: String, Codable, CaseIterable, Identifiable {
+    case light
+    case dark
+
+    var id: String { rawValue }
+
+    var displayName: LocalizedStringKey {
+        switch self {
+        case .light: "Light"
+        case .dark: "Dark"
+        }
+    }
+}
+
+// MARK: - Layer Shadow
+
+/// Drop shadow under a layer. Values are in the layer's own points (they scale with the layer).
+nonisolated struct LayerShadow: Codable, Hashable, Sendable {
+    var isEnabled = true
+    var radius: Double = 30
+    /// 0–1.
+    var opacity: Double = 0.35
+    var offsetY: Double = 16
+}
+
+// MARK: - Layer Style
+
+/// Appearance of a single screenshot layer. The last used one is remembered for the next capture.
+nonisolated struct LayerStyle: Codable, Hashable, Sendable {
+    var mockup: MockupStyle = .none
+    /// Thickness of the Glass / Border frame, in layer points.
+    var frameWidth: Double = 9
+    var borderColor = RGBAColor(hex: "2d2d2d")
+    var windowAppearance: WindowChromeAppearance = .dark
+    /// Corner radius of the screenshot, in layer points.
+    var cornerRadius: Double = 20
+    var shadow = LayerShadow()
+
+    static let `default` = LayerStyle()
+
+    init() {}
+
+    private enum CodingKeys: String, CodingKey {
+        case mockup, frameWidth, borderColor, windowAppearance, cornerRadius, shadow
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = LayerStyle.default
+        mockup = (try? c.decode(MockupStyle.self, forKey: .mockup)) ?? d.mockup
+        frameWidth = (try? c.decode(Double.self, forKey: .frameWidth)) ?? d.frameWidth
+        borderColor = (try? c.decode(RGBAColor.self, forKey: .borderColor)) ?? d.borderColor
+        windowAppearance = (try? c.decode(WindowChromeAppearance.self, forKey: .windowAppearance)) ?? d.windowAppearance
+        cornerRadius = (try? c.decode(Double.self, forKey: .cornerRadius)) ?? d.cornerRadius
+        shadow = (try? c.decode(LayerShadow.self, forKey: .shadow)) ?? d.shadow
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(mockup, forKey: .mockup)
+        try c.encode(frameWidth, forKey: .frameWidth)
+        try c.encode(borderColor, forKey: .borderColor)
+        try c.encode(windowAppearance, forKey: .windowAppearance)
+        try c.encode(cornerRadius, forKey: .cornerRadius)
+        try c.encode(shadow, forKey: .shadow)
+    }
+
+    // MARK: Frame Metrics
+
+    /// Height of the window mockup's title bar, in layer points.
+    static let windowTitleBarHeight: CGFloat = 28
+
+    /// Space the frame adds around the image, in layer points.
+    var chromeInsets: EdgeInsets {
+        switch mockup {
+        case .none:
+            return EdgeInsets()
+        case .glass, .border:
+            let w = CGFloat(frameWidth)
+            return EdgeInsets(top: w, leading: w, bottom: w, trailing: w)
+        case .window:
+            return EdgeInsets(top: Self.windowTitleBarHeight, leading: 0, bottom: 0, trailing: 0)
+        }
+    }
+
+    /// The outer corner radius of the framed layer (concentric with the image corners).
+    var outerCornerRadius: CGFloat {
+        switch mockup {
+        case .glass, .border: CGFloat(cornerRadius + frameWidth)
+        case .none, .window: CGFloat(cornerRadius)
+        }
+    }
+
+    /// Size of the framed layer for an image of `imageSize` points.
+    func framedSize(for imageSize: CGSize) -> CGSize {
+        let insets = chromeInsets
+        return CGSize(
+            width: imageSize.width + insets.leading + insets.trailing,
+            height: imageSize.height + insets.top + insets.bottom
+        )
     }
 }
 
 // MARK: - Canvas Item
 
-/// Represents a single image placed on the canvas with its own transforms.
+/// A screenshot placed on the canvas, with its own style and transforms.
 struct CanvasItem: Identifiable, Equatable {
     let id: UUID
-    var image: NSImage
+    var image: LayerImage
+    var style: LayerStyle
 
-    // Per-item transforms
+    /// Position of the layer's center relative to the canvas center, in canvas points.
     var offset: CGSize = .zero
-    var scale: CGFloat = 1.0
-    var imageScale: CGFloat = 100
+    /// Size in percent (100 = natural size, or "fit" for fixed-size canvases).
+    var scale: Double = 100
+    /// 2D rotation, in degrees.
     var rotation: Double = 0
+    /// 3D tilt around the horizontal / vertical axis, in degrees.
     var rotationX: Double = 0
     var rotationY: Double = 0
-
-    // Per-item appearance
-    var borderRadius: CGFloat = 20
-    var borderStyle: BorderStyle = .curved
-    var mockupStyle: MockupStyle = .defaultStyle
-    var showMockup: Bool = true
-    var mockupBorderSize: CGFloat = 3
-    var borderColor: Color = Color(hex: "2d2d2d")
-
-    // Layer ordering
+    /// Stacking order (higher is in front).
     var zIndex: Double = 0
 
-    init(image: NSImage, id: UUID = UUID()) {
+    init(image: LayerImage, style: LayerStyle, id: UUID = UUID()) {
         self.id = id
         self.image = image
+        self.style = style
     }
 
-    var transformHash: Int {
-        var hasher = Hasher()
-        hasher.combine(rotation)
-        hasher.combine(rotationX)
-        hasher.combine(rotationY)
-        hasher.combine(scale)
-        hasher.combine(imageScale)
-        hasher.combine(borderRadius)
-        return hasher.finalize()
+    /// Size of the framed layer before scaling, in layer points.
+    var framedSize: CGSize { style.framedSize(for: image.pointSize) }
+}
+
+// MARK: - Export Format
+
+/// File format used by Save and drag-out exports (the clipboard always gets PNG + TIFF).
+nonisolated enum ExportFormat: String, Codable, CaseIterable, Identifiable {
+    case png
+    case jpeg
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .png: "PNG"
+        case .jpeg: "JPEG"
+        }
     }
 
-    static func == (lhs: CanvasItem, rhs: CanvasItem) -> Bool {
-        lhs.id == rhs.id &&
-        lhs.offset == rhs.offset &&
-        lhs.scale == rhs.scale &&
-        lhs.imageScale == rhs.imageScale &&
-        lhs.rotation == rhs.rotation &&
-        lhs.rotationX == rhs.rotationX &&
-        lhs.rotationY == rhs.rotationY &&
-        lhs.borderRadius == rhs.borderRadius &&
-        lhs.borderStyle == rhs.borderStyle &&
-        lhs.mockupStyle == rhs.mockupStyle &&
-        lhs.showMockup == rhs.showMockup &&
-        lhs.mockupBorderSize == rhs.mockupBorderSize &&
-        lhs.zIndex == rhs.zIndex
+    var fileExtension: String {
+        switch self {
+        case .png: "png"
+        case .jpeg: "jpg"
+        }
     }
 }
